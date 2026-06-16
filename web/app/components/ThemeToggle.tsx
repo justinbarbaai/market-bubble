@@ -45,6 +45,9 @@ export function ThemeToggle({ className }: { className?: string }) {
     try {
       localStorage.setItem("mb-theme", next);
     } catch {}
+    // keep the mobile status-bar colour matched to the page (no dark line up top)
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute("content", next === "dark" ? "#1a1917" : "#f3ebda");
   };
 
   const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {

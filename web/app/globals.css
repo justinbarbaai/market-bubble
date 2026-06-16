@@ -7446,6 +7446,23 @@ body.panel-dragging iframe {
     padding: 14px 14px calc(16px + env(safe-area-inset-bottom));
   }
   .cin-views.show { transform: translateY(0) !important; }
+  /* the live-views strip is a wide nowrap pill on desktop — let it wrap + fill
+     the sheet on mobile so nothing gets cut off */
+  .cin-views .cin-strip {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    white-space: normal;
+    width: 100%;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding: 0;
+    gap: 10px 14px;
+  }
 
   /* touch has no mousemove to wake faded controls — keep exit + switch always up */
   .cin.idle { cursor: auto; }

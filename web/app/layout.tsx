@@ -81,12 +81,14 @@ export const viewport: Viewport = {
   maximumScale: 5,
   // cover the notch/home-bar so env(safe-area-inset-*) works (bottom nav padding)
   viewportFit: "cover",
-  themeColor: "#1a1917",
+  // default to the LIGHT page colour so the mobile status bar matches (no dark
+  // line up top); the theme script + ThemeToggle update it live for dark mode.
+  themeColor: "#f3ebda",
 };
 
 // Set the saved theme before paint so there's no light/dark flash on load.
 // First launch = light (cream paper); dark stays a remembered choice.
-const themeScript = `(function(){try{var t=localStorage.getItem('mb-theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+const themeScript = `(function(){try{var t=localStorage.getItem('mb-theme')||'light';document.documentElement.setAttribute('data-theme',t);var m=document.querySelector('meta[name=theme-color]');if(m)m.setAttribute('content',t==='dark'?'#1a1917':'#f3ebda');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export default function RootLayout({
   children,

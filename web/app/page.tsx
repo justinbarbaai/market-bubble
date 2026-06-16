@@ -18,6 +18,7 @@ import { TermFooter } from "./components/TermFooter";
 import { LiveNumber } from "./components/LiveNumber";
 import { Panel, type Rect } from "./components/Panel";
 import { useHub, type ChatMessage } from "./lib/useHub";
+import { readView } from "./lib/liveView";
 import { SITE_DEFAULT_LOOK, type OverlayOptions, type LookOptions } from "./lib/overlay";
 import { SourceLogo, type SourceKey } from "./components/logos";
 import {
@@ -172,6 +173,21 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [isLive]);
   const showLive = manualView ? manualView === "live" : isLive;
+
+  // The bottom nav + top button flip the view through requestView(); apply that
+  // intent here. On mount it also picks up a cross-page request (e.g. tapping
+  // "Live" from /market navigates to "/" and lands straight in the live room).
+  useEffect(() => {
+    const apply = () => {
+      const v = readView();
+      if (v === "live") setManualView("live");
+      else if (v === "lobby") setManualView(null); // null → follow the real live status
+    };
+    apply();
+    const onView = () => apply();
+    window.addEventListener("mb:view", onView);
+    return () => window.removeEventListener("mb:view", onView);
+  }, []);
 
   // Publish the live state for chrome-level FX (favicon dot + "● LIVE" title).
   useEffect(() => {

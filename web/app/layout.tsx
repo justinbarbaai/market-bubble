@@ -12,6 +12,8 @@ import "./globals.css";
 import { SiteFX } from "./components/SiteFX";
 import { PlayerLayer } from "./components/PlayerLayer";
 import { PremiumFX } from "./components/PremiumFX";
+import { BottomNav } from "./components/BottomNav";
+import { RegisterSW } from "./components/RegisterSW";
 
 // Chat-overlay font choices, exposed as CSS variables and selectable per overlay.
 const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-inter" });
@@ -63,6 +65,12 @@ export const metadata: Metadata = {
   title: "Market Bubble — Make Money. Command Attention. Leverage AI.",
   description:
     "Market Bubble — live Thursdays 1PM PST. Watch Banks & Ansem, one unified chat across Twitch, Kick & X, live markets, and news.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Market Bubble", statusBarStyle: "default" },
+  icons: {
+    icon: [{ url: "/favicon-32.png", sizes: "32x32", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 // Without this, phones render the desktop layout at a ~980px layout viewport and
@@ -71,6 +79,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  // cover the notch/home-bar so env(safe-area-inset-*) works (bottom nav padding)
+  viewportFit: "cover",
+  themeColor: "#1a1917",
 };
 
 // Set the saved theme before paint so there's no light/dark flash on load.
@@ -92,8 +103,10 @@ export default function RootLayout({
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <PlayerLayer>{children}</PlayerLayer>
+        <BottomNav />
         <SiteFX />
         <PremiumFX />
+        <RegisterSW />
       </body>
     </html>
   );

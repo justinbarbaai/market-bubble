@@ -67,8 +67,9 @@ export const metadata: Metadata = {
     "Market Bubble — live Thursdays 1PM PST. Watch Banks & Ansem, one unified chat across Twitch, Kick & X, live markets, and news.",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Market Bubble", statusBarStyle: "default" },
+  // favicon stays the original app/icon.svg (Next auto-serves it); only set the
+  // apple-touch icon for the installed-app home-screen icon.
   icons: {
-    icon: [{ url: "/favicon-32.png", sizes: "32x32", type: "image/png" }],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };

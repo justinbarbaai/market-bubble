@@ -47,6 +47,21 @@ function findViewerCount() {
     const m = (node.nodeValue || "").match(re);
     if (m) { const n = parseCount(m[1]); if (n != null) best = Math.max(best ?? 0, n); }
   }
+  // 3) the LIVE broadcast renders its concurrent audience as a standalone text
+  //    node — "4,177 views" / "191 viewers" / "1.2K watching" — and there's no
+  //    "Broadcast. N" aria-label on the live view. We only ever run on a
+  //    broadcast page (tick() gates on onBroadcast()), so there are no tweets
+  //    here and matching a node that is EXACTLY a count + views/viewers/watching
+  //    is safe — it's the real live number. Take the largest such node.
+  if (best == null) {
+    const wv = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let nv;
+    while ((nv = wv.nextNode())) {
+      const t = (nv.nodeValue || "").trim();
+      const m = t.match(/^([\d.,]+\s*[KkMm]?)\s+(?:views?|viewers?|watching)$/i);
+      if (m) { const n = parseCount(m[1]); if (n != null) best = Math.max(best ?? 0, n); }
+    }
+  }
   return best;
 }
 
@@ -89,13 +104,26 @@ let broadcaster = null; // cached — a tab's broadcast never changes hosts
 //    the right-hand chat column. The profile most-linked on the left wins.
 function detectBroadcaster() {
   if (broadcaster) return broadcaster;
+  const W = window.innerWidth;
   let handle = null;
+  // The host's follow button names them and survives playback. Match it in ANY
+  // follow state — "Follow @h" (not following), "Following @h" / "Unfollow @h"
+  // (you already follow them, the common case for the operator). Ignore follow
+  // buttons inside the right-hand chat column so a chatter isn't read as host.
+  let anyHandle = null;
   for (const el of document.querySelectorAll("[aria-label]")) {
-    const m = (el.getAttribute("aria-label") || "").match(/^Follow @([A-Za-z0-9_]{1,15})$/);
-    if (m) { handle = m[1]; break; }
+    const m = (el.getAttribute("aria-label") || "")
+      .match(/^(?:Follow|Following|Unfollow) @([A-Za-z0-9_]{1,15})$/);
+    if (!m) continue;
+    anyHandle = anyHandle || m[1];               // remember the first, wherever it is
+    const r = el.getBoundingClientRect();
+    if (r.width && r.left > W * 0.5) continue;     // prefer one outside the chat column
+    handle = m[1]; break;
   }
+  // The host's follow button is normally the ONLY one on a broadcast page, so if
+  // the only match sat in the right half (layout-dependent), still use it.
+  if (!handle) handle = anyHandle;
   if (!handle) {
-    const W = window.innerWidth;
     const tally = {};
     for (const a of document.querySelectorAll('a[href^="/"]')) {
       const href = (a.getAttribute("href") || "").split("?")[0];
@@ -163,7 +191,9 @@ function scanChat() {
     chatQueue.push({ id, username, text });
   }
 }
-setInterval(scanChat, 2000);
+// (scan + tick are driven by a Worker — see the bottom of the file — so Chrome's
+// background-tab timer throttling can't freeze capture when the broadcast window
+// is hidden/occluded/behind a fullscreen show.)
 
 // floating status badge so you can SEE it working without devtools
 let badge;
@@ -206,5 +236,24 @@ async function tick() {
     ok
   );
 }
-setInterval(tick, 5000);
+// Drive scan/tick from a Worker thread. Chrome clamps main-thread timers to
+// ~once/minute when a tab is hidden or occluded for a few minutes — which froze
+// the whole bridge whenever the broadcast window wasn't in front. Worker timers
+// are exempt, and the onmessage handler is event-driven (not timer-throttled),
+// so capture keeps running full-rate even fully hidden. Plain intervals are the
+// fallback if the worker can't be created.
+function startTicking() {
+  try {
+    const worker = new Worker(chrome.runtime.getURL("tick-worker.js"));
+    worker.onmessage = (e) => {
+      if (e.data === "scan") scanChat();
+      else if (e.data === "tick") tick();
+    };
+    worker.onerror = () => { setInterval(scanChat, 2000); setInterval(tick, 5000); };
+  } catch (e) {
+    setInterval(scanChat, 2000);
+    setInterval(tick, 5000);
+  }
+}
+startTicking();
 tick();

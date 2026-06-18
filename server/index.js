@@ -128,10 +128,13 @@ function ingestKeyOk(key) {
 let xLiveByHost = Object.create(null); // host -> { viewers, live, ts }
 let lastXLiveAt = 0; // most recent xlive push from any host (health strip)
 // A host's count is trusted this long after its last push. The extension pushes
-// every 5s, so 15s = ~3 missed cycles: a closed/ended broadcast drops within
-// ~15s (no stale "fake" views lingering), but a normal reload — which has a
-// 5-10s gap — re-pushes before it expires, so it doesn't flicker out.
-const XLIVE_TTL = 15000;
+// every 5s when its tab runs full-rate, but Chrome THROTTLES hidden/occluded
+// background tabs (a broadcast window behind a fullscreen show, or just not in
+// front) so their pushes slow to every 30-60s even with the worker timer. A
+// short window made those hosts flicker out between throttled pushes. 90s keeps
+// every still-open broadcast continuously "live" through the throttling; the
+// only cost is an ended broadcast lingering up to ~90s before it drops.
+const XLIVE_TTL = 90000;
 function aggregateXLive() {
   const now = Date.now();
   const breakdown = [];

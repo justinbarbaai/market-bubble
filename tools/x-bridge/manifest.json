@@ -17,5 +17,11 @@
       "run_at": "document_idle"
     }
   ],
-  "action": { "default_popup": "popup.html", "default_title": "Market Bubble X Bridge" }
+  "action": { "default_popup": "popup.html", "default_title": "Market Bubble X Bridge" },
+  "web_accessible_resources": [
+    {
+      "resources": ["tick-worker.js"],
+      "matches": ["https://x.com/*", "https://twitter.com/*"]
+    }
+  ]
 }

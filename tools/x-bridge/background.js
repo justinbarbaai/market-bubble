@@ -23,13 +23,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         method: "POST", headers,
         body: JSON.stringify({ host: msg.host || null, sent: msg.sent || 0 }),
       });
-      // Only push a count when we know which broadcast it's for — a hostless
-      // count would land under the fallback key and clash with the OCR bridge's
-      // per-host entries (double-counting the bar).
-      if (typeof msg.count === "number" && msg.count >= 0 && msg.host) {
+      // Push the count whenever we have one. Prefer the detected host (gives the
+      // per-account breakdown); if detection failed (e.g. you already follow the
+      // host, so there's no "Follow @handle" button to read), fall back to the
+      // generic "X" key so the combined Live Audience bar still shows the number
+      // instead of freezing. Both can't be live at once for one tab, so there's
+      // no double-count. (OCR backup is suppressed while this heartbeat is fresh.)
+      if (typeof msg.count === "number" && msg.count >= 0) {
         await fetch(`${base}/ingest/xlive`, {
           method: "POST", headers,
-          body: JSON.stringify({ live: msg.count > 0, viewers: msg.count, host: msg.host }),
+          body: JSON.stringify({ live: msg.count > 0, viewers: msg.count, host: msg.host || "X" }),
         });
       }
       if (Array.isArray(msg.chat) && msg.chat.length) {

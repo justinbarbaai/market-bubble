@@ -67,9 +67,14 @@ export const metadata: Metadata = {
     "Market Bubble — live Thursdays 1PM PST. Watch Banks & Ansem, one unified chat across Twitch, Kick & X, live markets, and news.",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Market Bubble", statusBarStyle: "default" },
-  // favicon stays the original app/icon.svg (Next auto-serves it); only set the
-  // apple-touch icon for the installed-app home-screen icon.
+  // The classic mark on every surface. Declare the favicon explicitly (SVG for
+  // modern browsers + a PNG because iOS Safari doesn't render SVG favicons and
+  // would otherwise show the default globe) plus the apple-touch home-screen icon.
   icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };

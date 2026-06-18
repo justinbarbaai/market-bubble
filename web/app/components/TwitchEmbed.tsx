@@ -64,14 +64,21 @@ export function TwitchEmbed({
           ...(video ? { video } : { channel }),
         });
 
+        // Mute is forced ONLY for the very first autoplay — browsers block
+        // autoplay WITH sound, so the stream has to start muted. After it's
+        // playing we never touch the mute state again, so when the viewer
+        // unmutes it STICKS: clicking anywhere on the site, switching tabs, or
+        // the watchdog resuming a pause no longer slams it back to muted.
+        let didInitialPlay = false;
         const forcePlay = () => {
           try {
             const p = embed.getPlayer();
-            if (muted) {
+            if (muted && !didInitialPlay) {
               p.setMuted(true);
               p.setVolume(0);
             }
             p.play();
+            didInitialPlay = true;
           } catch {}
         };
 

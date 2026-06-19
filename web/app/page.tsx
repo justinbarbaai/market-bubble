@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChatFeed, type Moderation } from "./components/ChatFeed";
 import { EmoteInput } from "./components/EmoteInput";
-import { useEmotes } from "./lib/useEmotes";
+import { useComposerEmotes } from "./lib/useComposerEmotes";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { MBLockup } from "./components/brand";
 import { Ticker } from "./components/Ticker";
@@ -471,7 +471,7 @@ export default function Home() {
   }, [messages]);
 
   // ---- chat send ----
-  const emotes = useEmotes(hubHttpUrl);
+  const { map: emotes, sections: emoteSections } = useComposerEmotes(hubHttpUrl, auth, clientId);
   const twitchChannels = serverChannels?.twitch ?? [];
   const kickChannels = serverChannels?.kick ?? [];
   // In demo mode the composer is always usable (so the promo can show typing).
@@ -588,6 +588,7 @@ export default function Home() {
         disabled={!sendTwitch && !sendKickTarget}
         placeholder={!sendTwitch && !sendKickTarget ? "Pick a platform…" : "Say something to the room…"}
         emotes={emotes}
+        sections={emoteSections}
       />
     </div>
   ) : (

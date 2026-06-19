@@ -2,18 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { EmoteMap } from "../lib/useEmotes";
+import type { EmoteSection } from "../lib/useUserEmotes";
 
-// The chat input with Twitch-style emote support:
+// The chat input with a Twitch-style emote system:
 //  - type-to-autocomplete: a popup of matching emotes appears as you type a
 //    word (≥2 chars); ↑/↓ to move, Tab/Enter to insert, Esc to dismiss.
-//  - an emote picker (😀) button: a searchable grid you can click to insert.
-// Inserting just drops the emote's NAME into the text — that's what gets sent,
-// and the hub renders it back as an image in everyone's feed.
+//  - an emote picker (☺) like Twitch's: search + sections grouped by channel,
+//    with a right-side tab strip (channel avatars + a 7TV tab) to jump between
+//    them. When logged in it shows the viewer's OWN emotes (every channel they
+//    sub to); otherwise the show channels' public sets.
+// Inserting drops the emote's NAME into the text — that's what gets sent, and
+// the hub renders it back as an image in everyone's feed.
 
 const SUG_MAX = 8;
-const PICKER_MAX = 200;
 
-// The token the caret sits in: start/end offsets + the prefix up to the caret.
 function tokenAt(text: string, caret: number) {
   let start = caret;
   while (start > 0 && /\S/.test(text[start - 1])) start--;
@@ -29,6 +31,7 @@ export function EmoteInput({
   placeholder,
   disabled,
   emotes,
+  sections,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -36,6 +39,7 @@ export function EmoteInput({
   placeholder?: string;
   disabled?: boolean;
   emotes: EmoteMap;
+  sections: EmoteSection[];
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const caretRef = useRef(0);
@@ -44,11 +48,12 @@ export function EmoteInput({
   const [sugIndex, setSugIndex] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const secRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const names = useMemo(() => Object.keys(emotes), [emotes]);
   const hasEmotes = names.length > 0;
 
-  // Suggestions for the word currently being typed.
   const suggestions = useMemo(() => {
     const el = inputRef.current;
     if (!el || document.activeElement !== el) return [];
@@ -64,13 +69,11 @@ export function EmoteInput({
       if (starts.length >= SUG_MAX) break;
     }
     return [...starts, ...contains].slice(0, SUG_MAX);
-    // re-run whenever the value OR caret position (tick) changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, names, tick]);
 
   useEffect(() => setSugIndex(0), [value]);
 
-  // Restore the caret after a programmatic insert re-renders the input.
   useEffect(() => {
     if (pendingCaret.current != null && inputRef.current) {
       const c = pendingCaret.current;
@@ -83,12 +86,10 @@ export function EmoteInput({
   const syncCaret = () => {
     const el = inputRef.current;
     if (el) caretRef.current = el.selectionStart ?? el.value.length;
-    setTick((n) => n + 1); // refresh suggestions for the new caret
+    setTick((n) => n + 1);
   };
 
-  // Replace the token at the caret (autocomplete) or insert at the caret
-  // (picker) with the emote name + a trailing space.
-  const insertEmote = (name: string, mode: "word" | "caret") => {
+  const insertEmote = (name: string, mode: "word" | "caret", keepPicker = false) => {
     const caret = caretRef.current;
     let start: number, end: number;
     if (mode === "word") {
@@ -101,7 +102,7 @@ export function EmoteInput({
     const next = value.slice(0, start) + name + " " + value.slice(end);
     pendingCaret.current = start + name.length + 1;
     onChange(next);
-    setPickerOpen(false);
+    if (!keepPicker) setPickerOpen(false);
     inputRef.current?.focus();
   };
 
@@ -124,7 +125,7 @@ export function EmoteInput({
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        caretRef.current = -1; // hide suggestions until next keystroke
+        caretRef.current = -1;
         setTick((n) => n + 1);
         return;
       }
@@ -132,12 +133,39 @@ export function EmoteInput({
     if (e.key === "Enter") onSubmit();
   };
 
-  const pickerList = useMemo(() => {
-    if (!pickerOpen) return [];
+  // Search across every section → a flat result list.
+  const searchHits = useMemo(() => {
     const q = pickerQuery.trim().toLowerCase();
-    const arr = q ? names.filter((n) => n.toLowerCase().includes(q)) : names;
-    return arr.slice(0, PICKER_MAX);
-  }, [pickerOpen, pickerQuery, names]);
+    if (!q) return null;
+    const seen = new Set<string>();
+    const hits: { name: string; url: string }[] = [];
+    for (const sec of sections)
+      for (const e of sec.emotes) {
+        if (seen.has(e.name)) continue;
+        if (e.name.toLowerCase().includes(q)) {
+          seen.add(e.name);
+          hits.push(e);
+        }
+        if (hits.length >= 300) break;
+      }
+    return hits;
+  }, [pickerQuery, sections]);
+
+  const jumpTo = (id: string) => {
+    const el = secRefs.current[id];
+    const wrap = scrollRef.current;
+    if (el && wrap) wrap.scrollTo({ top: el.offsetTop - wrap.offsetTop, behavior: "smooth" });
+  };
+
+  const tabIcon = (sec: EmoteSection) => {
+    if (sec.icon) {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={sec.icon} alt="" />;
+    }
+    if (sec.id === "7tv") return <span className="emote-tab-glyph">7TV</span>;
+    if (sec.id === "global" || sec.id === "twitch") return <span className="emote-tab-glyph">TW</span>;
+    return <span className="emote-tab-glyph">{sec.label.charAt(0).toUpperCase()}</span>;
+  };
 
   return (
     <div className="emote-input">
@@ -164,28 +192,85 @@ export function EmoteInput({
 
       {pickerOpen && (
         <div className="emote-picker">
-          <input
-            className="emote-picker-search"
-            autoFocus
-            value={pickerQuery}
-            onChange={(e) => setPickerQuery(e.target.value)}
-            placeholder="Search emotes…"
-          />
-          <div className="emote-picker-grid">
-            {pickerList.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="emote-picker-cell"
-                title={n}
-                onClick={() => insertEmote(n, "caret")}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={emotes[n].url} alt={n} loading="lazy" />
-              </button>
-            ))}
-            {pickerList.length === 0 && <span className="emote-picker-empty">No emotes</span>}
+          <div className="emote-picker-main">
+            <input
+              className="emote-picker-search"
+              autoFocus
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+              placeholder="Search emotes…"
+            />
+            <div className="emote-picker-scroll" ref={scrollRef}>
+              {searchHits ? (
+                <div className="emote-grid">
+                  {searchHits.map((e) => (
+                    <button
+                      key={e.name}
+                      type="button"
+                      className="emote-cell"
+                      title={e.name}
+                      onClick={() => insertEmote(e.name, "caret", true)}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={e.url} alt={e.name} loading="lazy" />
+                    </button>
+                  ))}
+                  {searchHits.length === 0 && <span className="emote-picker-empty">No emotes</span>}
+                </div>
+              ) : (
+                sections.map((sec) => (
+                  <div
+                    key={sec.id}
+                    className="emote-section"
+                    ref={(el) => {
+                      secRefs.current[sec.id] = el;
+                    }}
+                  >
+                    <div className="emote-section-head">
+                      {sec.icon && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={sec.icon} alt="" />
+                      )}
+                      <span>{sec.label}</span>
+                    </div>
+                    <div className="emote-grid">
+                      {sec.emotes.map((e) => (
+                        <button
+                          key={e.name}
+                          type="button"
+                          className="emote-cell"
+                          title={e.name}
+                          onClick={() => insertEmote(e.name, "caret", true)}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={e.url} alt={e.name} loading="lazy" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+              {sections.length === 0 && (
+                <span className="emote-picker-empty">Log in with Twitch to load your emotes.</span>
+              )}
+            </div>
           </div>
+
+          {sections.length > 1 && (
+            <div className="emote-picker-tabs">
+              {sections.map((sec) => (
+                <button
+                  key={sec.id}
+                  type="button"
+                  className={`emote-tab ${sec.id === "7tv" ? "is-7tv" : ""}`}
+                  title={sec.label}
+                  onClick={() => jumpTo(sec.id)}
+                >
+                  {tabIcon(sec)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

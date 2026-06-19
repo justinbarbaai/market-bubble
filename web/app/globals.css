@@ -2085,16 +2085,27 @@ body.overlay-bare::before {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Twitch-style picker: search + channel-grouped sections, with a right-side
+   tab strip of channel avatars + a 7TV tab (like the 7TV extension adds). */
 .emote-picker {
   position: absolute;
   left: 10px;
   right: 10px;
   bottom: calc(100% - 2px);
   z-index: 40;
+  display: flex;
+  max-height: 320px;
   background: var(--panel-2, #1c1b18);
   border: 1px solid var(--border-2);
   border-radius: 10px;
   box-shadow: 0 12px 34px -12px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.emote-picker-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   padding: 8px;
 }
 .emote-picker-search {
@@ -2109,15 +2120,41 @@ body.overlay-bare::before {
   font-size: 13px;
   outline: none;
 }
-.emote-picker-grid {
+.emote-picker-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.emote-section {
+  margin-bottom: 6px;
+}
+.emote-section-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 2px 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--panel-2, #1c1b18);
+}
+.emote-section-head img {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.emote-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, 34px);
   gap: 2px;
-  max-height: 220px;
-  overflow-y: auto;
   justify-content: space-between;
 }
-.emote-picker-cell {
+.emote-cell {
   width: 34px;
   height: 34px;
   display: grid;
@@ -2128,10 +2165,10 @@ body.overlay-bare::before {
   cursor: pointer;
   padding: 2px;
 }
-.emote-picker-cell:hover {
+.emote-cell:hover {
   background: color-mix(in srgb, var(--text) 12%, transparent);
 }
-.emote-picker-cell img {
+.emote-cell img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -2140,6 +2177,46 @@ body.overlay-bare::before {
   color: var(--muted);
   font-size: 12px;
   padding: 8px;
+}
+.emote-picker-tabs {
+  width: 42px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border-2);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.emote-tab {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  padding: 0;
+}
+.emote-tab:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+.emote-tab img {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.emote-tab-glyph {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--text);
+}
+.emote-tab.is-7tv .emote-tab-glyph {
+  color: #29b6f6;
 }
 
 .reader-composer {

@@ -14,8 +14,10 @@ const LS_RETURN = "mb_twitch_return";
 // NEXT_PUBLIC_TWITCH_CLIENT_ID env var was never configured.
 const PUBLIC_CLIENT_ID = "bt2g84siv1d9uu9bofyhvc0z8a3ynz";
 // chat:* lets us send; moderator:manage:banned_users lets a logged-in mod time
-// out / ban chatters in channels they moderate.
-const SCOPES = "chat:read chat:edit moderator:manage:banned_users";
+// out / ban chatters in channels they moderate; user:read:emotes lets us pull
+// the viewer's OWN emote set (everything they're subbed to, follower, bits,
+// global) so the composer's picker matches their real Twitch emotes.
+const SCOPES = "chat:read chat:edit moderator:manage:banned_users user:read:emotes";
 
 export type TwitchAuth = { token: string; login: string; userId: string };
 

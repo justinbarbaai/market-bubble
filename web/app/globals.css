@@ -8777,10 +8777,40 @@ body.panel-dragging iframe {
 
 /* mobile: stack the room vertically */
 @media (max-width: 820px) {
-  .room-grid { flex-direction: column; overflow-y: auto; }
-  .room-left { flex: none; }
-  .rp-chat { width: auto; height: 60vh; }
-  .rp-stream { min-height: 240px; }
+  /* ---- mobile live room: video → chat → audience, like a real mobile stream ---- */
+  /* clear the fixed bottom tab bar so the last panel isn't hidden behind it */
+  .room-grid {
+    flex-direction: column;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 10px;
+    padding: 10px 10px calc(74px + env(safe-area-inset-bottom));
+  }
+  /* dissolve the desktop "left column" so stream + audience sit directly in the
+     stack and we can reorder: video first, CHAT second (the point on mobile),
+     audience last + compact. */
+  .term-room .room-left { display: contents; }
+  .term-room .rp-stream { order: 1; flex: none; min-height: 0; }
+  .term-room .rp-chat   { order: 2; width: auto; height: auto; min-height: 52vh; }
+  .term-room .rp-index  { order: 3; }
+
+  /* lighter panel chrome + smaller headers so it reads as mobile, not desktop */
+  .term-room .rp { border-radius: 12px; }
+  .term-room .rp-head { padding: 9px 13px; }
+  .term-room .rp-title { font-size: 13.5px; }
+
+  /* video → a clean 16:9 at the top, not a tall stretched box */
+  .term-room .rp-stream .rp-body-stream { aspect-ratio: 16 / 9; min-height: 0; }
+
+  /* live audience → compact (smaller hero number, tighter rows/stats) */
+  .term-room .rp-body-index { padding: 10px 14px 12px; gap: 8px; }
+  .term-room .rp-body-index .term-index-num { font-size: 26px; }
+  .term-room .rp-body-index .term-rows { margin-top: 6px; padding-top: 6px; }
+  .term-room .rp-body-index .term-vol { margin-top: 6px; padding-top: 6px; gap: 6px; }
+
+  /* shrink the show/hide pills + fullscreen so the header doesn't cram */
+  .term-room .room-tog { padding: 5px 10px; font-size: 11px; }
+  .term-room .room-fs { width: 30px; height: 30px; }
 }
 
 

@@ -222,13 +222,21 @@ export default function Home() {
   // OS gesture) restores the browser chrome. requestFullscreen must run inside the
   // click gesture, so it lives in the toggle handler, not an effect.
   const roomRef = useRef<HTMLDivElement>(null);
+  // Entering/leaving focus mode resizes the player and Twitch pauses through it.
+  // Fire a gesture-bound signal so the player can resume from WITHIN this click —
+  // the only way an UNMUTED video is allowed to resume (autoplay policy).
+  const signalFocus = () => {
+    try { window.dispatchEvent(new Event("mb:roomfocus")); } catch {}
+  };
   const exitFocus = () => {
     setFocusMode(false);
+    signalFocus();
     try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch {}
   };
   const toggleFocus = () => {
     if (focusMode) return exitFocus();
     setFocusMode(true);
+    signalFocus();
     try {
       const el = roomRef.current;
       if (el && !document.fullscreenElement) el.requestFullscreen?.()?.catch?.(() => {});

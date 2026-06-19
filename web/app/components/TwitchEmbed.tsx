@@ -121,6 +121,31 @@ export function TwitchEmbed({
         };
         document.addEventListener("fullscreenchange", onFs);
 
+        // Diagnostic: record the player's real state (we can't read it from the
+        // page otherwise — cross-origin iframe). Lets us see if it's actually
+        // paused, and whether it's muted, when the user toggles focus.
+        const plog = (ev: string) => {
+          const w = window as any;
+          w.__mbPlayerLog = w.__mbPlayerLog || [];
+          try {
+            const p = embed.getPlayer();
+            w.__mbPlayerLog.push({ ev, t: Date.now(), paused: p?.isPaused?.(), muted: p?.getMuted?.() });
+          } catch (e) {
+            w.__mbPlayerLog.push({ ev, t: Date.now(), err: String(e).slice(0, 40) });
+          }
+          if (w.__mbPlayerLog.length > 80) w.__mbPlayerLog.shift();
+        };
+        // The room's focus toggle dispatches this from WITHIN the click gesture —
+        // resume across the transition here so an unmuted video is allowed to play.
+        const onRoomFocus = () => {
+          userOwnsPlayback = false;
+          plog("focus");
+          [0, 150, 350, 600, 1000, 1500, 2200].forEach((d) =>
+            fsTimers.push(setTimeout(() => { forcePlay(); plog("retry" + d); }, d))
+          );
+        };
+        window.addEventListener("mb:roomfocus", onRoomFocus);
+
         // Watchdog: Twitch's embed pauses itself when scrolled offscreen, when
         // its container resizes (e.g. entering/leaving fullscreen), and sometimes
         // never starts under a busy load. This is a live show — keep it rolling:
@@ -170,6 +195,7 @@ export function TwitchEmbed({
           window.removeEventListener("blur", onBlur);
           document.removeEventListener("visibilitychange", onVisible);
           document.removeEventListener("fullscreenchange", onFs);
+          window.removeEventListener("mb:roomfocus", onRoomFocus);
         };
       })
       .catch(() => {});

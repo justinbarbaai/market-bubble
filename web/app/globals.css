@@ -2051,7 +2051,7 @@ body.overlay-bare::before {
   z-index: 40;
   min-width: 200px;
   max-width: 280px;
-  background: var(--panel-2, #1c1b18);
+  background: #211f1b;
   border: 1px solid var(--border-2);
   border-radius: 10px;
   box-shadow: 0 12px 34px -12px rgba(0, 0, 0, 0.55);
@@ -2095,7 +2095,7 @@ body.overlay-bare::before {
   z-index: 40;
   display: flex;
   max-height: 320px;
-  background: var(--panel-2, #1c1b18);
+  background: #211f1b;
   border: 1px solid var(--border-2);
   border-radius: 10px;
   box-shadow: 0 12px 34px -12px rgba(0, 0, 0, 0.55);
@@ -2140,7 +2140,7 @@ body.overlay-bare::before {
   letter-spacing: 0.3px;
   text-transform: uppercase;
   color: var(--muted);
-  background: var(--panel-2, #1c1b18);
+  background: #211f1b;
 }
 .emote-section-head img {
   width: 16px;
@@ -2187,7 +2187,7 @@ body.overlay-bare::before {
   padding: 8px 4px;
   overflow-y: auto;
   border-left: 1px solid var(--border-2);
-  background: color-mix(in srgb, var(--text) 4%, transparent);
+  background: #18120c;
 }
 .emote-tab {
   width: 34px;

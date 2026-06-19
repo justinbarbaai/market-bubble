@@ -121,16 +121,20 @@ export function TwitchEmbed({
         };
         document.addEventListener("fullscreenchange", onFs);
 
-        // Watchdog: Twitch's embed pauses itself when scrolled offscreen (and
-        // sometimes never starts under a busy load). Keep the muted ambience
-        // rolling — resume any pause the viewer didn't ask for.
+        // Watchdog: Twitch's embed pauses itself when scrolled offscreen, when
+        // its container resizes (e.g. entering/leaving fullscreen), and sometimes
+        // never starts under a busy load. This is a live show — keep it rolling:
+        // resume ANY pause within ~1.2s. (We deliberately do NOT honor
+        // userOwnsPlayback here — that flag was leaving the stream stuck paused
+        // after fullscreen if the viewer had clicked in. Mute is still preserved,
+        // so a viewer who unmuted stays unmuted.)
         const iv = setInterval(() => {
-          if (cancelled || userOwnsPlayback) return;
+          if (cancelled) return;
           try {
             const p = embed.getPlayer();
             if (p.isPaused && p.isPaused()) forcePlay();
           } catch {}
-        }, 1500);
+        }, 1200);
 
         embed.addEventListener(Twitch.Embed.VIDEO_READY, () => forcePlay());
 

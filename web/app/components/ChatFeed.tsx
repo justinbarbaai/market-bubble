@@ -100,6 +100,31 @@ function profileUrl(source: string, username: string, profile?: Profile | null):
   return null;
 }
 
+// Hover-card avatar: the platform-provided one if we fetched a profile, else
+// unavatar by platform handle so a face shows even before/without that fetch.
+// Kick has no reliable public avatar endpoint → it falls back to the letter tile.
+function avatarUrl(source: string, username: string, profile?: Profile | null): string | null {
+  if (profile?.avatar) return profile.avatar;
+  const u = (profile?.login || username || "").replace(/^@/, "");
+  if (!u) return null;
+  if (source === "twitch") return `https://unavatar.io/twitch/${encodeURIComponent(u)}`;
+  if (source === "x") return `https://unavatar.io/x/${encodeURIComponent(u)}`;
+  return null;
+}
+
+// Render chat text with @mentions highlighted like Twitch (a tinted pill).
+const MENTION_RE = /(@[A-Za-z0-9_]{1,25})/g;
+function withMentions(text: string): React.ReactNode {
+  if (!text || text.indexOf("@") === -1) return text;
+  return text.split(MENTION_RE).map((p, i) =>
+    p && p[0] === "@" && /^@[A-Za-z0-9_]{1,25}$/.test(p) ? (
+      <span key={i} className="cf-mention">{p}</span>
+    ) : (
+      <span key={i}>{p}</span>
+    )
+  );
+}
+
 function Badges({ badges, source }: { badges?: ChatBadge[] | null; source?: string }) {
   if (!badges || !badges.length) return null;
   return (
@@ -299,6 +324,7 @@ function Row({
   const displayName = profile?.displayName || m.username;
   const since = profile?.createdAt ? new Date(profile.createdAt).getFullYear() : null;
   const url = profileUrl(m.source, m.username, profile);
+  const avatar = avatarUrl(m.source, m.username, profile);
 
   return (
     <div
@@ -392,13 +418,19 @@ function Row({
               rel="noreferrer"
               title={url ? `Open ${displayName} on ${SOURCE_LABELS[m.source]} ↗` : undefined}
             >
-              {profile?.avatar ? (
-                <img className="cf-card-avatar" src={profile.avatar} alt="" loading="lazy" />
-              ) : (
-                <span className="cf-card-avatar cf-card-avatar-fallback" style={{ background: m.color }}>
-                  {m.username.charAt(0).toUpperCase()}
-                </span>
-              )}
+              <span className="cf-card-avatar cf-card-avatar-fallback" style={{ background: m.color }}>
+                {m.username.charAt(0).toUpperCase()}
+                {avatar && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="cf-card-avatar-img"
+                    src={avatar}
+                    alt=""
+                    loading="lazy"
+                    onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+                  />
+                )}
+              </span>
               <span className="cf-card-id">
                 <span className="cf-card-name">{displayName}</span>
                 <span className="cf-card-handle">
@@ -469,10 +501,10 @@ function Row({
                     loading="lazy"
                   />
                 ) : (
-                  <span key={i}>{f.text}</span>
+                  <span key={i}>{withMentions(f.text)}</span>
                 )
               )
-            : m.text}
+            : withMentions(m.text)}
         </span>
       </span>
     </div>

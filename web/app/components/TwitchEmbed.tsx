@@ -88,8 +88,14 @@ export function TwitchEmbed({
         // click (a tab/app switch hides the document at the same moment — and
         // the embed grabbing focus on load must not count).
         let userOwnsPlayback = false;
+        // The embed grabs window focus WHILE IT INITIALIZES, which looks exactly
+        // like the viewer clicking in — and that would wrongly flag "user owns
+        // playback" and disable the watchdog, leaving a VOD/stream sitting paused
+        // on load. So ignore focus-based ownership for the first couple seconds.
+        let armed = false;
+        const armTimer = setTimeout(() => { armed = true; }, 2500);
         const onBlur = () => {
-          if (document.visibilityState === "visible" && el.contains(document.activeElement))
+          if (armed && document.visibilityState === "visible" && el.contains(document.activeElement))
             userOwnsPlayback = true;
         };
         window.addEventListener("blur", onBlur);
@@ -102,6 +108,11 @@ export function TwitchEmbed({
           }
         };
         document.addEventListener("visibilitychange", onVisible);
+        // Entering / leaving fullscreen makes the Twitch player pause itself —
+        // kick it back into play on any fullscreen change (mute is preserved
+        // since forcePlay only mutes on the very first play).
+        const onFs = () => forcePlay();
+        document.addEventListener("fullscreenchange", onFs);
 
         // Watchdog: Twitch's embed pauses itself when scrolled offscreen (and
         // sometimes never starts under a busy load). Keep the muted ambience
@@ -124,10 +135,12 @@ export function TwitchEmbed({
         window.addEventListener("keydown", onGesture, { once: true });
         cleanupGesture = () => {
           clearInterval(iv);
+          clearTimeout(armTimer);
           window.removeEventListener("pointerdown", onGesture);
           window.removeEventListener("keydown", onGesture);
           window.removeEventListener("blur", onBlur);
           document.removeEventListener("visibilitychange", onVisible);
+          document.removeEventListener("fullscreenchange", onFs);
         };
       })
       .catch(() => {});

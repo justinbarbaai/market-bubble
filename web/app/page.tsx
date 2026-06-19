@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChatFeed, type Moderation } from "./components/ChatFeed";
+import { EmoteInput } from "./components/EmoteInput";
+import { useEmotes } from "./lib/useEmotes";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { MBLockup } from "./components/brand";
 import { Ticker } from "./components/Ticker";
@@ -469,6 +471,7 @@ export default function Home() {
   }, [messages]);
 
   // ---- chat send ----
+  const emotes = useEmotes(hubHttpUrl);
   const twitchChannels = serverChannels?.twitch ?? [];
   const kickChannels = serverChannels?.kick ?? [];
   // In demo mode the composer is always usable (so the promo can show typing).
@@ -543,8 +546,11 @@ export default function Home() {
     if (sendResult && !sendResult.ok) showToast(sendResult.error || "Kick send failed", false);
   }, [sendResult]);
   const moderation: Moderation = {
-    canModerate: (m) =>
-      (m.source === "twitch" && !!auth?.userId) || (m.source === "kick" && kickConnected && !!m.userId),
+    // Public viewer site: no mod controls in the hover card. Being logged in to
+    // chat does NOT make you a mod, and a fan can't action anyone — so the
+    // Ban/Timeout buttons just confused people. (Wiring kept; flip this to a real
+    // mod-status check if we ever surface mod tools for actual broadcasters/mods.)
+    canModerate: () => false,
     onTimeout: (m, minutes) => moderate(m, minutes),
     onBan: (m) => moderate(m),
   };
@@ -575,15 +581,14 @@ export default function Home() {
           </button>
         )}
       </div>
-      <div className="reader-composer">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder={!sendTwitch && !sendKickTarget ? "Pick a platform…" : "Say something to the room…"}
-        />
-        <button onClick={submit} disabled={!sendTwitch && !sendKickTarget}>Send</button>
-      </div>
+      <EmoteInput
+        value={draft}
+        onChange={setDraft}
+        onSubmit={submit}
+        disabled={!sendTwitch && !sendKickTarget}
+        placeholder={!sendTwitch && !sendKickTarget ? "Pick a platform…" : "Say something to the room…"}
+        emotes={emotes}
+      />
     </div>
   ) : (
     <div className="term-composer-hint">

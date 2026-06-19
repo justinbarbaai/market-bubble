@@ -11,6 +11,7 @@ import { EmoteResolver } from "./sources/emoteResolver.js";
 import { TwitchBadgeResolver } from "./sources/twitchBadges.js";
 import { fetchViewerSnapshot, fetchXLive } from "./sources/viewers.js";
 import { fetchContent } from "./sources/content.js";
+import { fetchEmoteList } from "./sources/emoteList.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -870,6 +871,22 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ clips, streams, tweets: x.tweets || [], updatedAt: Date.now() }));
     } catch (err) {
       res.end(JSON.stringify({ clips: [], streams: [], tweets: [], error: String(err?.message || err) }));
+    }
+    return;
+  }
+
+  // Emote map for the composer's autocomplete + picker (Twitch globals/channel
+  // + 7TV/BTTV/FFZ global+channel), reusing the shared resolver's cache.
+  if (url.pathname === "/emotes") {
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    });
+    try {
+      const data = await fetchEmoteList(config.twitchChannels, twitchCreds, emotes);
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      res.end(JSON.stringify({ emotes: {}, count: 0, error: String(err?.message || err) }));
     }
     return;
   }

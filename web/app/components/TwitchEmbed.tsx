@@ -136,6 +136,21 @@ export function TwitchEmbed({
           } catch {}
         }, 1200);
 
+        // THE fullscreen-pause fix: the room's "focus" mode doesn't use the
+        // Fullscreen API at all (verified — it never fires) — it just collapses
+        // the header/ticker, which RESIZES the player, and Twitch pauses through a
+        // container resize. Watch the player's own box and resume the moment the
+        // resize settles (when the player is stable), then once more shortly after.
+        let roT: ReturnType<typeof setTimeout> | undefined;
+        const ro = new ResizeObserver(() => {
+          clearTimeout(roT);
+          roT = setTimeout(() => {
+            forcePlay();
+            setTimeout(forcePlay, 450);
+          }, 250);
+        });
+        try { ro.observe(el); } catch {}
+
         embed.addEventListener(Twitch.Embed.VIDEO_READY, () => forcePlay());
 
         // Fallback: the moment the viewer interacts anywhere, start playback.
@@ -147,6 +162,8 @@ export function TwitchEmbed({
         cleanupGesture = () => {
           clearInterval(iv);
           clearTimeout(armTimer);
+          clearTimeout(roT);
+          try { ro.disconnect(); } catch {}
           fsTimers.forEach(clearTimeout);
           window.removeEventListener("pointerdown", onGesture);
           window.removeEventListener("keydown", onGesture);

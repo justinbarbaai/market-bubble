@@ -20,36 +20,43 @@ export function useComposerEmotes(
   const user = useUserEmotes(auth, clientId);
 
   return useMemo(() => {
-    // 7TV / BTTV / FFZ — always the show channels' sets, shown on the side.
+    // Bucket the show channels' sets by provider: Kick, third-party (7TV/BTTV/
+    // FFZ), and Twitch (only used for the logged-out fallback).
+    const kick: { name: string; url: string }[] = [];
     const tp: { name: string; url: string }[] = [];
-    const tpMap: EmoteMap = {};
+    const tw: { name: string; url: string }[] = [];
+    const channelMap: EmoteMap = {};
+    const sideMap: EmoteMap = {};
     for (const [name, e] of Object.entries(channel)) {
-      if (e.provider !== "twitch") {
+      channelMap[name] = e;
+      if (e.provider === "kick") {
+        kick.push({ name, url: e.url });
+        sideMap[name] = e;
+      } else if (e.provider === "twitch") {
+        tw.push({ name, url: e.url });
+      } else {
         tp.push({ name, url: e.url });
-        tpMap[name] = e;
+        sideMap[name] = e;
       }
     }
-    const sevenSection: EmoteSection | null = tp.length
-      ? { id: "7tv", label: "7TV · BTTV · FFZ", emotes: tp }
-      : null;
+    // Side sections shown after the Twitch channels (Kick, then 7TV).
+    const sideSections: EmoteSection[] = [];
+    if (kick.length) sideSections.push({ id: "kick", label: "Kick", emotes: kick });
+    if (tp.length) sideSections.push({ id: "7tv", label: "7TV · BTTV · FFZ", emotes: tp });
 
-    // Logged in with the scope → the viewer's real entitlement set.
+    // Logged in with the scope → the viewer's real entitlement set + the sides.
     if (user.status === "ok" && user.sections.length) {
-      const sections = sevenSection ? [...user.sections, sevenSection] : user.sections;
-      const map: EmoteMap = { ...tpMap, ...user.map };
-      return { sections, map, status: user.status };
+      return {
+        sections: [...user.sections, ...sideSections],
+        map: { ...sideMap, ...user.map },
+        status: user.status,
+      };
     }
 
-    // Fallback: the show channels' public Twitch set + the third-party sets.
-    const tw: { name: string; url: string }[] = [];
-    const map: EmoteMap = {};
-    for (const [name, e] of Object.entries(channel)) {
-      map[name] = e;
-      if (e.provider === "twitch") tw.push({ name, url: e.url });
-    }
+    // Fallback: the show channels' public Twitch set + Kick + third-party.
     const sections: EmoteSection[] = [];
     if (tw.length) sections.push({ id: "twitch", label: "Twitch", emotes: tw });
-    if (sevenSection) sections.push(sevenSection);
-    return { sections, map, status: user.status };
+    sections.push(...sideSections);
+    return { sections, map: channelMap, status: user.status };
   }, [channel, user.sections, user.map, user.status]);
 }

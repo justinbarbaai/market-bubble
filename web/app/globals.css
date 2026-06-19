@@ -2218,6 +2218,9 @@ body.overlay-bare::before {
 .emote-tab.is-7tv .emote-tab-glyph {
   color: #29b6f6;
 }
+.emote-tab.is-kick .emote-tab-glyph {
+  color: #53fc18;
+}
 
 .reader-composer {
   flex-shrink: 0;

@@ -1,4 +1,23 @@
 import { getTwitchToken } from "./viewers.js";
+import { kickGet } from "./kickContent.js";
+
+const KICK_EMOTE = (id) => `https://files.kick.com/emotes/${id}/fullsize`;
+
+// Kick channel emotes (global + the channel's sub emotes). Kick has no per-user
+// entitlement API, so this is the channel-level set a Kick viewer would reach for.
+async function addKickEmotes(channel, out) {
+  if (!channel) return;
+  try {
+    const sets = await kickGet(`https://kick.com/emotes/${encodeURIComponent(channel)}`);
+    if (!Array.isArray(sets)) return;
+    for (const set of sets) {
+      if (set?.name === "Emoji" || set?.id === "Emoji") continue; // skip the emoji set
+      for (const e of set?.emotes || []) {
+        if (e?.name && e?.id != null && !out[e.name]) out[e.name] = { url: KICK_EMOTE(e.id), provider: "kick" };
+      }
+    }
+  } catch {}
+}
 
 // Aggregates the emotes a viewer can TYPE in the composer into one
 // { name: { url, provider } } map — for the autocomplete + picker on the site.
@@ -27,9 +46,10 @@ async function userId(login, creds, token) {
 
 let cache = { at: 0, data: null, key: "" };
 
-export async function fetchEmoteList(channels, creds, resolver, { ttlMs = 10 * 60 * 1000 } = {}) {
+export async function fetchEmoteList(channels, kickChannels, creds, resolver, { ttlMs = 10 * 60 * 1000 } = {}) {
   const list = (channels || []).map((c) => String(c).toLowerCase());
-  const key = list.join(",");
+  const kickList = (kickChannels || []).map((c) => String(c).toLowerCase());
+  const key = list.join(",") + "|" + kickList.join(",");
   if (cache.data && cache.key === key && Date.now() - cache.at < ttlMs) return cache.data;
 
   const out = {}; // name -> { url, provider }
@@ -65,6 +85,9 @@ export async function fetchEmoteList(channels, creds, resolver, { ttlMs = 10 * 6
       }
     }
   } catch {}
+
+  // Kick channel emotes (no Twitch creds needed).
+  for (const ch of kickList) await addKickEmotes(ch, out);
 
   const data = { emotes: out, count: Object.keys(out).length, updatedAt: Date.now() };
   cache = { at: Date.now(), data, key };

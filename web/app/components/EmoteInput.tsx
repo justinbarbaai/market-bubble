@@ -163,6 +163,7 @@ export function EmoteInput({
       return <img src={sec.icon} alt="" />;
     }
     if (sec.id === "7tv") return <span className="emote-tab-glyph">7TV</span>;
+    if (sec.id === "kick") return <span className="emote-tab-glyph">KICK</span>;
     if (sec.id === "global" || sec.id === "twitch") return <span className="emote-tab-glyph">TW</span>;
     return <span className="emote-tab-glyph">{sec.label.charAt(0).toUpperCase()}</span>;
   };
@@ -262,7 +263,7 @@ export function EmoteInput({
                 <button
                   key={sec.id}
                   type="button"
-                  className={`emote-tab ${sec.id === "7tv" ? "is-7tv" : ""}`}
+                  className={`emote-tab ${sec.id === "7tv" ? "is-7tv" : sec.id === "kick" ? "is-kick" : ""}`}
                   title={sec.label}
                   onClick={() => jumpTo(sec.id)}
                 >

@@ -109,9 +109,16 @@ export function TwitchEmbed({
         };
         document.addEventListener("visibilitychange", onVisible);
         // Entering / leaving fullscreen makes the Twitch player pause itself —
-        // kick it back into play on any fullscreen change (mute is preserved
-        // since forcePlay only mutes on the very first play).
-        const onFs = () => forcePlay();
+        // and often a BEAT AFTER the event fires, so a single replay misses it.
+        // Re-arm the watchdog (in case the viewer had clicked in) and retry play
+        // across the transition. Mute is preserved (forcePlay only mutes once).
+        const fsTimers: ReturnType<typeof setTimeout>[] = [];
+        const onFs = () => {
+          userOwnsPlayback = false;
+          [0, 250, 600, 1200, 2000].forEach((d) =>
+            fsTimers.push(setTimeout(() => forcePlay(), d))
+          );
+        };
         document.addEventListener("fullscreenchange", onFs);
 
         // Watchdog: Twitch's embed pauses itself when scrolled offscreen (and
@@ -136,6 +143,7 @@ export function TwitchEmbed({
         cleanupGesture = () => {
           clearInterval(iv);
           clearTimeout(armTimer);
+          fsTimers.forEach(clearTimeout);
           window.removeEventListener("pointerdown", onGesture);
           window.removeEventListener("keydown", onGesture);
           window.removeEventListener("blur", onBlur);

@@ -883,7 +883,7 @@ const server = http.createServer(async (req, res) => {
       "Access-Control-Allow-Origin": "*",
     });
     try {
-      const data = await fetchEmoteList(config.twitchChannels, twitchCreds, emotes);
+      const data = await fetchEmoteList(config.twitchChannels, config.kickChannels, twitchCreds, emotes);
       res.end(JSON.stringify(data));
     } catch (err) {
       res.end(JSON.stringify({ emotes: {}, count: 0, error: String(err?.message || err) }));

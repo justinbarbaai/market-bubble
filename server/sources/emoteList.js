@@ -1,22 +1,14 @@
 import { getTwitchToken } from "./viewers.js";
-import { kickGet } from "./kickContent.js";
+import { KICK_EMOTES } from "./kickEmotesStatic.js";
 
-const KICK_EMOTE = (id) => `https://files.kick.com/emotes/${id}/fullsize`;
-
-// Kick channel emotes (global + the channel's sub emotes). Kick has no per-user
-// entitlement API, so this is the channel-level set a Kick viewer would reach for.
-async function addKickEmotes(channel, out) {
-  if (!channel) return;
-  try {
-    const sets = await kickGet(`https://kick.com/emotes/${encodeURIComponent(channel)}`);
-    if (!Array.isArray(sets)) return;
-    for (const set of sets) {
-      if (set?.name === "Emoji" || set?.id === "Emoji") continue; // skip the emoji set
-      for (const e of set?.emotes || []) {
-        if (e?.name && e?.id != null && !out[e.name]) out[e.name] = { url: KICK_EMOTE(e.id), provider: "kick" };
-      }
-    }
-  } catch {}
+// Kick channel emotes (global + the show channels' sets). Kick fronts its emote
+// API with Cloudflare, which blocks the Render hub's datacenter IP (and browser
+// CORS), so we can't fetch them live — we serve a captured static snapshot
+// instead (refresh: node scripts/refresh-kick-emotes.mjs locally).
+function addKickEmotes(out) {
+  for (const [name, url] of Object.entries(KICK_EMOTES)) {
+    if (!out[name]) out[name] = { url, provider: "kick" };
+  }
 }
 
 // Aggregates the emotes a viewer can TYPE in the composer into one
@@ -86,8 +78,8 @@ export async function fetchEmoteList(channels, kickChannels, creds, resolver, { 
     }
   } catch {}
 
-  // Kick channel emotes (no Twitch creds needed).
-  for (const ch of kickList) await addKickEmotes(ch, out);
+  // Kick channel emotes (static snapshot — see note above).
+  if (kickList.length) addKickEmotes(out);
 
   const data = { emotes: out, count: Object.keys(out).length, updatedAt: Date.now() };
   cache = { at: Date.now(), data, key };

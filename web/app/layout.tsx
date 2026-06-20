@@ -110,7 +110,11 @@ export default function RootLayout({
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <PlayerLayer>{children}</PlayerLayer>
+        {/* the one <main> landmark every page needs for screen-reader nav.
+            display:contents so it adds the landmark without changing any layout. */}
+        <PlayerLayer>
+          <main style={{ display: "contents" }}>{children}</main>
+        </PlayerLayer>
         <BottomNav />
         <SiteFX />
         <PremiumFX />

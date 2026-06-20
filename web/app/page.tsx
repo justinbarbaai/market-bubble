@@ -607,6 +607,7 @@ export default function Home() {
 
   return (
     <div ref={roomRef} className={`term term-room${!showLive ? " offair" : ""}${showLive && focusMode ? " focus" : ""}`}>
+      <h1 className="sr-only">Market Bubble — live trading show with FaZe Banks & Ansem</h1>
       <div className="term-room-stage">
       {/* ---- terminal top bar ---- */}
       <div className="term-bar-slot">
@@ -789,11 +790,13 @@ export default function Home() {
 
       {/* ---- bottom tape: live market ticker + brand ---- */}
       <div className="term-tape-slot">
-      <footer className="term-tape">
+      {/* a market ticker, not a page footer — plain div so it isn't a second
+         contentinfo landmark (the site footer is the real one). */}
+      <div className="term-tape" aria-label="Live market ticker">
         <span className="term-tape-cap left">Invest in yourself</span>
         <div className="term-tape-ticker"><Ticker /></div>
         <span className="term-tape-cap right">LIVE THURS 1PM · <b>Polymarket</b></span>
-      </footer>
+      </div>
       </div>
       </div>
 

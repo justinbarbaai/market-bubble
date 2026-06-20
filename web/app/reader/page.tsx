@@ -228,7 +228,11 @@ export default function ReaderPage() {
         className={`watch-drawer-scrim ${settingsOpen ? "open" : ""}`}
         onClick={() => setSettingsOpen(false)}
       />
-      <aside className={`watch-drawer ${settingsOpen ? "open" : ""}`} aria-hidden={!settingsOpen}>
+      <aside
+        className={`watch-drawer ${settingsOpen ? "open" : ""}`}
+        aria-hidden={!settingsOpen}
+        {...(settingsOpen ? {} : { inert: true })}
+      >
         <div className="watch-drawer-head">
           <span className="card-title" style={{ margin: 0 }}>
             Customize chat

@@ -78,7 +78,15 @@ export function ChatCustomizer({
   return (
     <>
       <div className={`cc-scrim ${open ? "in" : ""}`} onClick={onClose} aria-hidden="true" />
-      <aside className={`cc-drawer ${open ? "in" : ""}`} role="dialog" aria-label="Customize your chat" aria-hidden={!open}>
+      <aside
+        className={`cc-drawer ${open ? "in" : ""}`}
+        role="dialog"
+        aria-label="Customize your chat"
+        aria-hidden={!open}
+        // when closed, take its form controls out of the tab order entirely
+        // (aria-hidden alone leaves them focusable → WCAG aria-hidden-focus fail)
+        {...(open ? {} : { inert: true })}
+      >
         <div className="cc-head">
           <span className="cc-title">Your Chat</span>
           <button className="cc-x" onClick={onClose} aria-label="Close">✕</button>

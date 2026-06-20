@@ -191,9 +191,7 @@ function scanChat() {
     chatQueue.push({ id, username, text });
   }
 }
-// (scan + tick are driven by a Worker — see the bottom of the file — so Chrome's
-// background-tab timer throttling can't freeze capture when the broadcast window
-// is hidden/occluded/behind a fullscreen show.)
+setInterval(scanChat, 2000);
 
 // floating status badge so you can SEE it working without devtools
 let badge;
@@ -236,24 +234,10 @@ async function tick() {
     ok
   );
 }
-// Drive scan/tick from a Worker thread. Chrome clamps main-thread timers to
-// ~once/minute when a tab is hidden or occluded for a few minutes — which froze
-// the whole bridge whenever the broadcast window wasn't in front. Worker timers
-// are exempt, and the onmessage handler is event-driven (not timer-throttled),
-// so capture keeps running full-rate even fully hidden. Plain intervals are the
-// fallback if the worker can't be created.
-function startTicking() {
-  try {
-    const worker = new Worker(chrome.runtime.getURL("tick-worker.js"));
-    worker.onmessage = (e) => {
-      if (e.data === "scan") scanChat();
-      else if (e.data === "tick") tick();
-    };
-    worker.onerror = () => { setInterval(scanChat, 2000); setInterval(tick, 5000); };
-  } catch (e) {
-    setInterval(scanChat, 2000);
-    setInterval(tick, 5000);
-  }
-}
-startTicking();
+// Plain interval ticking. Background-tab timer throttling/freezing is handled at
+// the BROWSER level by launching Chrome with --disable-background-timer-throttling
+// + --disable-renderer-backgrounding + --disable-backgrounding-occluded-windows
+// (the "Start Capture Chrome" launcher), so this stays full-rate even when the
+// broadcast tab is hidden / behind a fullscreen show. No in-page worker needed.
+setInterval(tick, 5000);
 tick();

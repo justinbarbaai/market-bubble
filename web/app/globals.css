@@ -8744,6 +8744,14 @@ body.panel-dragging iframe {
 
 /* ---- live prediction poll (the room vs Polymarket) ---- */
 .rp-poll { flex: 0 0 auto; }
+/* Prediction + Live Audience share a row below the video so the column isn't
+   tall + lopsided. Poll a bit wider; audience becomes a compact square beside it. */
+.room-substack { display: flex; gap: 14px; align-items: stretch; }
+.room-substack:empty { display: none; }
+.room-substack > .rp { flex: 1 1 0; min-width: 0; }
+.room-substack > .rp-poll { flex: 1.35 1 0; }
+.room-substack .rp-body-index .term-index-num { font-size: 27px; }
+.room-substack .rp-body-index .term-vol { gap: 6px; }
 .poll-meta b { color: var(--text); font-weight: 700; }
 .poll-body { padding: 13px 16px 14px; gap: 12px; overflow: visible; }
 .poll-q {
@@ -8890,7 +8898,8 @@ body.panel-dragging iframe {
   /* dissolve the desktop "left column" so stream + audience sit directly in the
      stack and we can reorder: video first, CHAT second (the point on mobile),
      audience last + compact. */
-  .term-room .room-left { display: contents; }
+  .term-room .room-left,
+  .term-room .room-substack { display: contents; }
   .term-room .rp-stream { order: 1; flex: none; min-height: 0; }
   .term-room .rp-poll   { order: 2; }
   .term-room .rp-chat   { order: 3; width: auto; height: auto; min-height: 52vh; }

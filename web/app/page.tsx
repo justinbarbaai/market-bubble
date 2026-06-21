@@ -666,7 +666,7 @@ export default function Home() {
       ) : (
       <div className="work">
         <div className="room-grid" data-stream={show.stream ? "1" : "0"} data-chat={show.chat ? "1" : "0"} data-index={show.index ? "1" : "0"}>
-          {(show.stream || show.index) && (
+          {(show.stream || show.index || poll) && (
             <div className="room-left">
               {show.stream && (
                 <section className="rp rp-stream">
@@ -715,6 +715,7 @@ export default function Home() {
                   </div>
                 </section>
               )}
+              <div className="room-substack">
               {poll && <PredictionCard poll={poll} />}
               {show.index && (
                 <section className="rp rp-index">
@@ -756,6 +757,7 @@ export default function Home() {
                   </div>
                 </section>
               )}
+              </div>
             </div>
           )}
           {show.chat && (

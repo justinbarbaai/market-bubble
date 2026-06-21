@@ -8742,6 +8742,93 @@ body.panel-dragging iframe {
   padding: 40px;
 }
 
+/* ---- live prediction poll (the room vs Polymarket) ---- */
+.rp-poll { flex: 0 0 auto; }
+.poll-meta b { color: var(--text); font-weight: 700; }
+.poll-body { padding: 13px 16px 14px; gap: 12px; overflow: visible; }
+.poll-q {
+  margin: 0 0 2px;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+.poll-bars { display: flex; flex-direction: column; gap: 9px; }
+.poll-bar-row { display: grid; grid-template-columns: 78px 1fr auto; align-items: center; gap: 10px; }
+.poll-bar-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+}
+.poll-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  overflow: hidden;
+}
+.poll-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.poll-bar-fill.room { background: var(--up); }
+.poll-bar-fill.market { background: #2f80ed; }
+.poll-bar-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: right;
+}
+.poll-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+.poll-votes { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.poll-gap { color: var(--muted); }
+.poll-link { font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.poll-link:hover { color: var(--text); }
+
+/* studio: prediction-poll control */
+.pollctl { margin-top: 16px; padding: 16px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--panel); }
+.pollctl-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+.pollctl-head b { font-family: var(--serif); font-size: 15px; }
+.pollctl-active { padding: 10px 12px; border: 1px solid var(--border-2); border-radius: 9px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+.pollctl-q { font-weight: 600; }
+.pollctl-actions { display: flex; gap: 8px; margin-top: 6px; }
+.pollctl-actions button,
+.pollctl-search button {
+  padding: 7px 13px; border-radius: 8px; border: 1px solid var(--border-2);
+  background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 13px;
+}
+.pollctl-actions button:hover,
+.pollctl-search button:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.pollctl-search { display: flex; gap: 8px; }
+.pollctl-search input {
+  flex: 1; padding: 8px 11px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-2);
+  color: var(--text); font-size: 13px; outline: none;
+}
+.pollctl-note { margin: 8px 0 0; }
+.pollctl-results { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; max-height: 280px; overflow-y: auto; }
+.pollctl-result {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 8px;
+  background: transparent; color: var(--text); cursor: pointer; text-align: left; font-size: 13px;
+}
+.pollctl-result:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.pollctl-result-q { flex: 1; }
+
 /* header show/hide toggles — segmented pill like cinema's switch */
 .room-toggles {
   display: inline-flex;
@@ -8805,8 +8892,9 @@ body.panel-dragging iframe {
      audience last + compact. */
   .term-room .room-left { display: contents; }
   .term-room .rp-stream { order: 1; flex: none; min-height: 0; }
-  .term-room .rp-chat   { order: 2; width: auto; height: auto; min-height: 52vh; }
-  .term-room .rp-index  { order: 3; }
+  .term-room .rp-poll   { order: 2; }
+  .term-room .rp-chat   { order: 3; width: auto; height: auto; min-height: 52vh; }
+  .term-room .rp-index  { order: 4; }
 
   /* lighter panel chrome + smaller headers so it reads as mobile, not desktop */
   .term-room .rp { border-radius: 12px; }

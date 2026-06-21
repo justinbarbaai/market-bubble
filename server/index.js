@@ -12,6 +12,7 @@ import { TwitchBadgeResolver } from "./sources/twitchBadges.js";
 import { fetchViewerSnapshot, fetchXLive } from "./sources/viewers.js";
 import { fetchContent } from "./sources/content.js";
 import { fetchEmoteList } from "./sources/emoteList.js";
+import { searchMarkets, getMarket } from "./sources/polymarket.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -343,6 +344,8 @@ function startViewersPolling() {
 const clients = new Set();
 
 function broadcast(obj) {
+  // Every chat message flows through here → tally it into the live poll first.
+  if (obj && obj.type === "message") tallyVote(obj);
   const data = JSON.stringify(obj);
   for (const ws of clients) {
     // Private clients (the pop-out reader) only get their own sources' feed.
@@ -350,6 +353,75 @@ function broadcast(obj) {
     if (ws.readyState === ws.OPEN) ws.send(data);
   }
 }
+
+// ---- Live "chat vs the market" poll (Polymarket) ----
+// One binary market featured at a time. Chat votes YES/NO across every platform
+// (Twitch + Kick + X, via the unified feed) and we show the room's split next to
+// Polymarket's real odds. The operator drives it from Studio.
+let poll = null; // { id, slug, question, odds:[yes,no], url, open, votes:{key->"yes"|"no"}, startedAt }
+let pollBroadcastTimer = null;
+
+function pollPayload() {
+  if (!poll) return { type: "poll", poll: null };
+  let yes = 0, no = 0;
+  for (const k in poll.votes) {
+    if (poll.votes[k] === "yes") yes++;
+    else if (poll.votes[k] === "no") no++;
+  }
+  return {
+    type: "poll",
+    poll: {
+      id: poll.id,
+      slug: poll.slug,
+      question: poll.question,
+      oddsYes: Number.isFinite(poll.odds?.[0]) ? poll.odds[0] : null,
+      url: poll.url || null,
+      open: poll.open,
+      yes,
+      no,
+      total: yes + no,
+    },
+  };
+}
+function broadcastPoll() { broadcast(pollPayload()); }
+function schedulePollBroadcast() {
+  if (pollBroadcastTimer) return;
+  pollBroadcastTimer = setTimeout(() => { pollBroadcastTimer = null; broadcastPoll(); }, 700);
+}
+
+// A message counts as a vote only if the WHOLE message is yes/no/y/n/1/2 (so
+// "yesterday" never counts). One vote per chatter; latest wins.
+function tallyVote(msg) {
+  if (!poll || !poll.open) return;
+  const t = String(msg.text || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  let v = null;
+  if (t === "yes" || t === "y" || t === "1") v = "yes";
+  else if (t === "no" || t === "n" || t === "2") v = "no";
+  if (!v) return;
+  const key = `${msg.source}:${String(msg.username || "").toLowerCase()}`;
+  if (poll.votes[key] === v) return;
+  poll.votes[key] = v;
+  schedulePollBroadcast();
+}
+
+async function setPollMarket(id) {
+  const mk = await getMarket(id);
+  if (!mk || !mk.question) throw new Error("market not found");
+  poll = { id: mk.id, slug: mk.slug, question: mk.question, odds: mk.odds, url: mk.url, open: true, votes: {}, startedAt: Date.now() };
+  broadcastPoll();
+  return mk;
+}
+function closePoll() { if (poll) { poll.open = false; broadcastPoll(); } }
+function clearPoll() { poll = null; broadcastPoll(); }
+
+// Keep the featured market's odds fresh while voting is open.
+setInterval(async () => {
+  if (!poll || !poll.open) return;
+  try {
+    const mk = await getMarket(poll.id);
+    if (mk && mk.odds.length) { poll.odds = mk.odds; broadcastPoll(); }
+  } catch {}
+}, 30000);
 
 // ---- Source manager ----
 // twitch/kick hold an array of sources (one per channel); x holds one source.
@@ -518,6 +590,9 @@ function sendConfig(ws) {
   }
   if (lastViewers) {
     ws.send(JSON.stringify({ type: "viewers", viewers: lastViewers }));
+  }
+  if (poll) {
+    ws.send(JSON.stringify(pollPayload()));
   }
 }
 
@@ -888,6 +963,43 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       res.end(JSON.stringify({ emotes: {}, count: 0, error: String(err?.message || err) }));
     }
+    return;
+  }
+
+  // ---- Live "chat vs the market" poll (Polymarket) ----
+  if (url.pathname.startsWith("/poll")) {
+    const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "x-op-key", "Content-Type": "application/json" };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+
+    // public: the current poll state (initial paint; live updates come over WS)
+    if (url.pathname === "/poll") {
+      res.writeHead(200, cors);
+      res.end(JSON.stringify(pollPayload().poll));
+      return;
+    }
+
+    // everything else is operator-only (Studio drives the poll)
+    const opOk = operatorKeyOk(url.searchParams.get("key") || req.headers["x-op-key"]);
+    if (!opOk) { res.writeHead(401, cors); res.end(JSON.stringify({ ok: false, error: "bad operator key" })); return; }
+
+    if (url.pathname === "/poll/search") {
+      try {
+        const markets = await searchMarkets(url.searchParams.get("q") || "", 24);
+        res.writeHead(200, cors); res.end(JSON.stringify({ markets }));
+      } catch (err) { res.writeHead(200, cors); res.end(JSON.stringify({ markets: [], error: String(err?.message || err) })); }
+      return;
+    }
+    if (url.pathname === "/poll/set") {
+      try {
+        const mk = await setPollMarket(url.searchParams.get("id"));
+        res.writeHead(200, cors); res.end(JSON.stringify({ ok: true, market: mk }));
+      } catch (err) { res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: String(err?.message || err) })); }
+      return;
+    }
+    if (url.pathname === "/poll/close") { closePoll(); res.writeHead(200, cors); res.end(JSON.stringify({ ok: true })); return; }
+    if (url.pathname === "/poll/clear") { clearPoll(); res.writeHead(200, cors); res.end(JSON.stringify({ ok: true })); return; }
+
+    res.writeHead(404, cors); res.end(JSON.stringify({ ok: false, error: "unknown poll route" }));
     return;
   }
 

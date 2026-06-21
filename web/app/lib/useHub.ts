@@ -94,6 +94,19 @@ export interface ViewerSnapshot {
   updatedAt: number;
 }
 
+// Live "chat vs the market" poll (Polymarket). null when no market is featured.
+export interface Poll {
+  id: string;
+  slug: string;
+  question: string;
+  oddsYes: number | null; // Polymarket's real YES probability (0..1)
+  url: string | null;
+  open: boolean;
+  yes: number;
+  no: number;
+  total: number;
+}
+
 const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL || "ws://localhost:8080";
 const MAX_BUFFER = 500;
 
@@ -138,6 +151,7 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
   const [liveStyle, setLiveStyle] = useState<LiveStyle | null>(null);
   const [siteLook, setSiteLook] = useState<LiveStyle | null>(null);
   const [viewers, setViewers] = useState<ViewerSnapshot | null>(null);
+  const [poll, setPoll] = useState<Poll | null>(null);
   const [profiles, setProfiles] = useState<Record<string, Profile | null>>({});
   const requestedProfiles = useRef<Set<string>>(new Set());
 
@@ -278,6 +292,8 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
         setModResult({ ok: !!msg.ok, error: msg.error ?? null, action: msg.action, ts: Date.now() });
       } else if (msg.type === "sendResult") {
         setSendResult({ ok: !!msg.ok, error: msg.error ?? null, ts: Date.now() });
+      } else if (msg.type === "poll") {
+        setPoll(msg.poll ?? null);
       }
     };
 
@@ -391,6 +407,7 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
     siteLook,
     pushSiteLook,
     viewers,
+    poll,
     profiles,
     requestProfile,
     kickEnabled,

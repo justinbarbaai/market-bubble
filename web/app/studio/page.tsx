@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChatFeed } from "../components/ChatFeed";
-import { useHub } from "../lib/useHub";
+import { useHub, type Poll } from "../lib/useHub";
 import { SITE_DEFAULT_LOOK, type OverlayOptions } from "../lib/overlay";
 import { SourceLogo, SOURCE_LABELS, type SourceKey } from "../components/logos";
 import { MBLockup } from "../components/brand";
@@ -43,6 +43,7 @@ function ControlPanel() {
     disconnectKickAccount,
     hubUrl,
     hubHttpUrl,
+    poll,
   } = useHub();
 
   // The show = Banks on Twitch + Ansem on Kick. Connecting either merges its
@@ -199,6 +200,9 @@ function ControlPanel() {
 
       {/* remote control of the X-bridge running on the show machine */}
       <BridgeControl hubHttpUrl={hubHttpUrl} />
+
+      {/* the live "chat vs the market" prediction poll */}
+      <PollControl hubHttpUrl={hubHttpUrl} poll={poll} />
 
       {/* host account cards — connect + channel, the one place the feed is built */}
       <div className="host-grid">
@@ -696,5 +700,96 @@ function HealthStrip({ hubHttpUrl }: { hubHttpUrl: string }) {
         </span>
       ))}
     </div>
+  );
+}
+
+// ---- Live prediction poll control (operator picks the Polymarket market) ----
+type PollMarket = { id: string; question: string; odds: number[] };
+
+function PollControl({ hubHttpUrl, poll }: { hubHttpUrl: string; poll: Poll | null }) {
+  const [opKey, setOpKey] = useState("");
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<PollMarket[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    try { setOpKey(localStorage.getItem("mb.operatorKey") || ""); } catch {}
+  }, []);
+
+  const search = async () => {
+    if (!opKey) { setNote("Set your operator key in the Bridge control above first."); return; }
+    setBusy(true); setNote("");
+    try {
+      const r = await fetch(
+        `${hubHttpUrl}/poll/search?q=${encodeURIComponent(q)}&key=${encodeURIComponent(opKey)}`,
+        { cache: "no-store" }
+      );
+      const j = await r.json();
+      setResults(j.markets || []);
+      if (!(j.markets || []).length) setNote("No Yes/No markets found — try another search.");
+    } catch { setNote("Search failed."); } finally { setBusy(false); }
+  };
+
+  const setMarket = async (id: string) => {
+    setBusy(true); setNote("");
+    try {
+      const r = await fetch(`${hubHttpUrl}/poll/set?id=${encodeURIComponent(id)}&key=${encodeURIComponent(opKey)}`);
+      const j = await r.json();
+      if (j.ok) { setNote("Poll is live — chat can vote YES / NO."); setResults([]); setQ(""); }
+      else setNote(j.error || "Failed to set market.");
+    } catch { setNote("Failed to set market."); } finally { setBusy(false); }
+  };
+
+  const close = () => fetch(`${hubHttpUrl}/poll/close?key=${encodeURIComponent(opKey)}`).catch(() => {});
+  const clear = () => fetch(`${hubHttpUrl}/poll/clear?key=${encodeURIComponent(opKey)}`).catch(() => {});
+
+  const roomYes = poll && poll.total ? Math.round((poll.yes / poll.total) * 100) : null;
+  const mktYes = poll && poll.oddsYes != null ? Math.round(poll.oddsYes * 100) : null;
+
+  return (
+    <section className="pollctl">
+      <div className="pollctl-head">
+        <b>Prediction poll</b>
+        <span className="muted small">chat votes YES / NO across Twitch · Kick · X, shown vs Polymarket</span>
+      </div>
+
+      {poll && (
+        <div className="pollctl-active">
+          <div className="pollctl-q">{poll.question}</div>
+          <div className="muted small">
+            Room {roomYes ?? 0}% YES · Market {mktYes ?? "—"}% YES · {poll.total} votes ·{" "}
+            <b>{poll.open ? "OPEN" : "closed"}</b>
+          </div>
+          <div className="pollctl-actions">
+            {poll.open && <button type="button" onClick={close}>Close voting</button>}
+            <button type="button" onClick={clear}>Clear</button>
+          </div>
+        </div>
+      )}
+
+      <div className="pollctl-search">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && search()}
+          placeholder="Search Polymarket (blank = top markets)…"
+        />
+        <button type="button" onClick={search} disabled={busy}>Search</button>
+      </div>
+
+      {note && <p className="muted small pollctl-note">{note}</p>}
+
+      {results.length > 0 && (
+        <div className="pollctl-results">
+          {results.map((m) => (
+            <button key={m.id} type="button" className="pollctl-result" onClick={() => setMarket(m.id)}>
+              <span className="pollctl-result-q">{m.question}</span>
+              <span className="muted small">YES {Math.round((m.odds?.[0] || 0) * 100)}%</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

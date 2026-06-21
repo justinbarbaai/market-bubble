@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChatFeed, type Moderation } from "./components/ChatFeed";
 import { EmoteInput } from "./components/EmoteInput";
 import { useComposerEmotes } from "./lib/useComposerEmotes";
+import { PredictionCard } from "./components/PredictionCard";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { MBLockup } from "./components/brand";
 import { Ticker } from "./components/Ticker";
@@ -77,6 +78,7 @@ export default function Home() {
     moderateKick,
     sendKick,
     hubHttpUrl,
+    poll,
   } = useHub();
   const { session: kickSession } = useKickSession();
 
@@ -713,6 +715,7 @@ export default function Home() {
                   </div>
                 </section>
               )}
+              {poll && <PredictionCard poll={poll} />}
               {show.index && (
                 <section className="rp rp-index">
                   <div className="rp-head">

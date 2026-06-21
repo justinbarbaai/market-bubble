@@ -8762,38 +8762,65 @@ body.panel-dragging iframe {
   line-height: 1.3;
   color: var(--text);
 }
-.poll-bars { display: flex; flex-direction: column; gap: 9px; }
-.poll-bar-row { display: grid; grid-template-columns: 78px 1fr auto; align-items: center; gap: 10px; }
-.poll-bar-label {
+/* The Room: a green-YES / red-NO tug-of-war, with Polymarket marked on the same
+   scale. Brand colours only (no stray blue) so it reads as Market Bubble. */
+.poll-tug { display: flex; flex-direction: column; gap: 7px; }
+.poll-tug-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   font-family: var(--mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
+  font-size: 11px;
   letter-spacing: 0.4px;
-  color: var(--muted);
 }
-.poll-bar {
-  position: relative;
-  height: 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 10%, transparent);
-  overflow: hidden;
-}
-.poll-bar-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 999px;
-  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.poll-bar-fill.room { background: var(--up); }
-.poll-bar-fill.market { background: #2f80ed; }
-.poll-bar-val {
-  font-family: var(--mono);
+.poll-tug-side { color: var(--muted); text-transform: uppercase; }
+.poll-tug-side b { font-size: 14px; }
+.poll-tug-side.yes b { color: var(--up); }
+.poll-tug-side.no b { color: var(--down); }
+.poll-tug-room {
+  font-family: var(--serif);
+  font-style: italic;
   font-size: 12px;
-  font-weight: 700;
-  color: var(--text);
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.poll-tug-wrap { position: relative; padding-top: 14px; } /* room above for the flag */
+.poll-tug-bar {
+  display: flex;
+  height: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-2);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.poll-tug-yes { background: var(--up); transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.poll-tug-no { background: var(--down); transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+/* Polymarket's real YES odds, marked on the same 0–100 scale as a vertical tick. */
+.poll-mkt { position: absolute; top: 0; bottom: 0; width: 0; }
+.poll-mkt-tick {
+  position: absolute;
+  top: 12px;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: var(--text);
+}
+.poll-mkt-flag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-50%);
   white-space: nowrap;
-  min-width: 60px;
-  text-align: right;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--text);
+  background: var(--bg);
+  padding: 0 4px;
+  border-radius: 4px;
 }
 .poll-foot {
   display: flex;

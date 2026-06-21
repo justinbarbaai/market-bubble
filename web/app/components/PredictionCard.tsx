@@ -2,15 +2,18 @@
 
 import type { Poll } from "../lib/useHub";
 
-// The live "chat vs the market" panel: the featured Polymarket market with the
-// room's YES/NO vote split shown right next to Polymarket's real odds. Chat
-// votes by typing YES / NO (counted across Twitch + Kick + X).
+// The live "chat vs the market" panel, in the Market Bubble newspaper voice.
+// The Room is a green-YES / red-NO tug-of-war bar (so a NO vote visibly grows
+// the red side), and Polymarket's real odds sit on the same scale as an ink
+// marker — so you read the room-vs-market gap at a glance. Chat votes by typing
+// YES / NO (counted across Twitch + Kick + X).
 export function PredictionCard({ poll }: { poll: Poll | null }) {
   if (!poll) return null;
-  const roomYes = poll.total ? Math.round((poll.yes / poll.total) * 100) : null;
+  const total = poll.total;
+  const roomYes = total ? Math.round((poll.yes / total) * 100) : 0;
+  const roomNo = total ? 100 - roomYes : 0;
   const mktYes = poll.oddsYes != null ? Math.round(poll.oddsYes * 100) : null;
-  // who's higher on YES — a fun "the room disagrees with the market" tell
-  const gap = roomYes != null && mktYes != null ? roomYes - mktYes : null;
+  const gap = mktYes != null && total ? roomYes - mktYes : null;
 
   return (
     <section className="rp rp-poll">
@@ -26,31 +29,42 @@ export function PredictionCard({ poll }: { poll: Poll | null }) {
           )}
         </span>
       </div>
+
       <div className="rp-body poll-body">
         <p className="poll-q">{poll.question}</p>
 
-        <div className="poll-bars">
-          <div className="poll-bar-row">
-            <span className="poll-bar-label">The Room</span>
-            <span className="poll-bar">
-              <span className="poll-bar-fill room" style={{ width: `${roomYes ?? 0}%` }} />
+        <div className="poll-tug">
+          <div className="poll-tug-head">
+            <span className="poll-tug-side yes">
+              <b>{roomYes}%</b> YES
             </span>
-            <span className="poll-bar-val">{roomYes != null ? `${roomYes}% YES` : "—"}</span>
+            <span className="poll-tug-room">The Room</span>
+            <span className="poll-tug-side no">
+              NO <b>{roomNo}%</b>
+            </span>
           </div>
-          <div className="poll-bar-row">
-            <span className="poll-bar-label">Polymarket</span>
-            <span className="poll-bar">
-              <span className="poll-bar-fill market" style={{ width: `${mktYes ?? 0}%` }} />
-            </span>
-            <span className="poll-bar-val">{mktYes != null ? `${mktYes}% YES` : "—"}</span>
+          <div className="poll-tug-wrap">
+            <div className="poll-tug-bar">
+              <span className="poll-tug-yes" style={{ width: `${roomYes}%` }} />
+              <span className="poll-tug-no" style={{ width: `${roomNo}%` }} />
+            </div>
+            {mktYes != null && (
+              <span className="poll-mkt" style={{ left: `${mktYes}%` }} title={`Polymarket: ${mktYes}% YES`}>
+                <span className="poll-mkt-tick" />
+                <span className="poll-mkt-flag">Polymarket {mktYes}%</span>
+              </span>
+            )}
           </div>
         </div>
 
         <div className="poll-foot">
           <span className="poll-votes">
-            {poll.total.toLocaleString()} vote{poll.total === 1 ? "" : "s"}
-            {gap != null && Math.abs(gap) >= 8 && (
-              <span className="poll-gap"> · room {gap > 0 ? "more" : "less"} bullish by {Math.abs(gap)}pts</span>
+            {total.toLocaleString()} vote{total === 1 ? "" : "s"}
+            {gap != null && Math.abs(gap) >= 6 && (
+              <span className="poll-gap">
+                {" "}
+                · room <b>{gap > 0 ? "+" : "−"}{Math.abs(gap)}</b> vs the market
+              </span>
             )}
           </span>
           {poll.url && (

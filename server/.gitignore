@@ -2,3 +2,7 @@ node_modules/
 .env
 *.log
 .mb-state.json
+.mb-floor.json
+.mb-clips.json
+.mb-accounts.json
+.mb-cockpit.json

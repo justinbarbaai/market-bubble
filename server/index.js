@@ -13,6 +13,10 @@ import { fetchViewerSnapshot, fetchXLive } from "./sources/viewers.js";
 import { fetchContent } from "./sources/content.js";
 import { fetchEmoteList } from "./sources/emoteList.js";
 import { searchMarkets, getMarket } from "./sources/polymarket.js";
+import { loadFloor, flushFloor, recordMessage, recordVote, floorPayload, awardBubbles } from "./floor.js";
+import { loadClips, flushClips, submitClip, decideClip, featureClip, clipsPayload, setAttribution } from "./clips.js";
+import { loadAccounts, flushAccounts, issueCode, verifyAccount, accountsFor, oembed, isVerifiedHandle, VERIFIABLE } from "./accounts.js";
+import { loadCockpit, flushCockpit, addEntry, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -253,6 +257,19 @@ function loadState() {
     /* no saved state yet */
   }
 }
+// The Floor's Bubble balances live in their own file (high write volume during a
+// show), loaded on boot and flushed periodically + on shutdown.
+loadFloor();
+setInterval(() => flushFloor(), 20000).unref?.();
+// Clip-to-Earn submissions persist alongside the Floor (its own file).
+loadClips();
+setInterval(() => flushClips(), 20000).unref?.();
+// Connected clip accounts (identity links) persist too.
+loadAccounts();
+setInterval(() => flushAccounts(), 20000).unref?.();
+// Distribution cockpit ledger persists too.
+loadCockpit();
+setInterval(() => flushCockpit(), 20000).unref?.();
 let saveTimer = null;
 function saveState() {
   if (saveTimer) clearTimeout(saveTimer);
@@ -344,8 +361,12 @@ function startViewersPolling() {
 const clients = new Set();
 
 function broadcast(obj) {
-  // Every chat message flows through here → tally it into the live poll first.
-  if (obj && obj.type === "message") tallyVote(obj);
+  // Every chat message flows through here → tally it into the live poll first,
+  // then credit the chatter's Bubbles on The Floor (the engagement economy).
+  if (obj && obj.type === "message") {
+    tallyVote(obj);
+    if (recordMessage(obj)) scheduleFloorBroadcast();
+  }
   const data = JSON.stringify(obj);
   for (const ws of clients) {
     // Private clients (the pop-out reader) only get their own sources' feed.
@@ -389,6 +410,28 @@ function schedulePollBroadcast() {
   pollBroadcastTimer = setTimeout(() => { pollBroadcastTimer = null; broadcastPoll(); }, 700);
 }
 
+// ---- The Floor (engagement leaderboard) broadcast ----
+// Points change on nearly every message; coalesce updates so we push the
+// leaderboard at most every few seconds instead of per-message.
+let floorBroadcastTimer = null;
+function broadcastFloor() { broadcast(floorPayload()); }
+function scheduleFloorBroadcast() {
+  if (floorBroadcastTimer) return;
+  floorBroadcastTimer = setTimeout(() => { floorBroadcastTimer = null; broadcastFloor(); }, 4000);
+}
+
+// ---- Clip-to-Earn broadcast ----
+// The public gallery (approved/featured) — pushed on every change so the wall
+// updates live. The Studio queue pulls the full list (incl. pending) over HTTP.
+function broadcastClips() { broadcast(clipsPayload()); }
+// Apply a clip-reward to The Floor and refresh both leaderboards.
+function applyClipAward(award) {
+  if (award && award.amount) {
+    awardBubbles(award.key, award.source, award.name, award.amount);
+    scheduleFloorBroadcast();
+  }
+}
+
 // A message counts as a vote only if the WHOLE message is yes/no/y/n/1/2 (so
 // "yesterday" never counts). One vote per chatter; latest wins.
 function tallyVote(msg) {
@@ -401,6 +444,8 @@ function tallyVote(msg) {
   const key = `${msg.source}:${String(msg.username || "").toLowerCase()}`;
   if (poll.votes[key] === v) return;
   poll.votes[key] = v;
+  // A vote is engagement — credit the chatter's Bubbles (once per market).
+  if (recordVote(key, msg.source, msg.username, poll.id)) scheduleFloorBroadcast();
   schedulePollBroadcast();
 }
 
@@ -594,6 +639,10 @@ function sendConfig(ws) {
   if (poll) {
     ws.send(JSON.stringify(pollPayload()));
   }
+  // The Floor leaderboard — paint immediately on connect.
+  ws.send(JSON.stringify(floorPayload()));
+  // Clip-to-Earn gallery — paint immediately on connect.
+  ws.send(JSON.stringify(clipsPayload()));
 }
 
 // ---- HTTP + WebSocket server ----
@@ -1003,6 +1052,196 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // The Floor — engagement leaderboard (Bubbles). Public, read-only; live
+  // updates ride the WS. Used for the initial paint + a health check.
+  if (url.pathname === "/floor") {
+    res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+    res.end(JSON.stringify(floorPayload().floor));
+    return;
+  }
+
+  // ---- Clip-to-Earn ----
+  if (url.pathname.startsWith("/clips")) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, x-op-key",
+      "Content-Type": "application/json",
+    };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+
+    // public: the gallery (approved/featured), for the /clips wall initial paint
+    if (url.pathname === "/clips" && req.method === "GET") {
+      res.writeHead(200, cors);
+      res.end(JSON.stringify(clipsPayload()));
+      return;
+    }
+
+    // public: a signed-in viewer submits a clip link. Identity (source:username)
+    // is claimed by the client; the operator-approval gate is the fraud check
+    // (and what actually pays out), so a spoofed name can't earn unreviewed.
+    if (url.pathname === "/clips/submit" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        const source = String(j.source || "").toLowerCase();
+        const username = String(j.username || "").trim();
+        if (!username || !["twitch", "kick", "x"].includes(source)) {
+          res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Sign in to submit a clip." })); return;
+        }
+        const mbKey = `${source}:${username.toLowerCase()}`;
+        const out = submitClip({ url: j.url, by: mbKey, bySource: source, byName: username });
+        if (out.ok) {
+          broadcastClips();
+          // Airtight loop: read the clip's real author via oEmbed and confirm it
+          // matches one of the submitter's VERIFIED handles — so nobody can paste
+          // a stranger's viral clip and claim it. (Only TikTok/YouTube expose the
+          // author via oEmbed; others stay unchecked for the operator to eyeball.)
+          const platform = out.clip.platform;
+          if (VERIFIABLE.includes(platform)) {
+            oembed(platform, out.clip.url)
+              .then((data) => {
+                const author = data?.author || null;
+                const attributed = !!(author && isVerifiedHandle(mbKey, platform, author));
+                if (setAttribution(out.clip.id, { author, attributed })) broadcastClips();
+              })
+              .catch(() => {});
+          }
+        }
+        res.writeHead(200, cors); res.end(JSON.stringify(out));
+      });
+      return;
+    }
+
+    // everything else is operator-only (Studio drives approvals)
+    const opOk = operatorKeyOk(url.searchParams.get("key") || req.headers["x-op-key"]);
+    if (!opOk) { res.writeHead(401, cors); res.end(JSON.stringify({ ok: false, error: "bad operator key" })); return; }
+
+    // operator: full list incl. pending/rejected for the review queue
+    if (url.pathname === "/clips/all") {
+      res.writeHead(200, cors);
+      res.end(JSON.stringify(clipsPayload({ all: true })));
+      return;
+    }
+    // operator: approve (with tier) / reject — approval pays Bubbles to The Floor
+    if (url.pathname === "/clips/decide" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        const out = decideClip(String(j.id || ""), { action: j.action, tier: j.tier, views: j.views, note: j.note });
+        if (out.ok) { applyClipAward(out.award); broadcastClips(); }
+        res.writeHead(200, cors); res.end(JSON.stringify(out));
+      });
+      return;
+    }
+    // operator: feature toggle (first feature pays a bonus)
+    if (url.pathname === "/clips/feature" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        const out = featureClip(String(j.id || ""), !!j.on);
+        if (out.ok) { applyClipAward(out.award); broadcastClips(); }
+        res.writeHead(200, cors); res.end(JSON.stringify(out));
+      });
+      return;
+    }
+
+    res.writeHead(404, cors); res.end(JSON.stringify({ ok: false, error: "unknown clips route" }));
+    return;
+  }
+
+  // ---- Connected clip accounts (identity links) ----
+  if (url.pathname.startsWith("/accounts")) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type",
+      "Content-Type": "application/json",
+    };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+
+    // a member's MB identity is claimed via their signed-in source:username
+    const mbKeyOf = (source, username) =>
+      ["twitch", "kick", "x"].includes(String(source)) && String(username || "").trim()
+        ? `${source}:${String(username).trim().toLowerCase()}`
+        : null;
+
+    // GET /accounts?source=&username= → this member's linked accounts
+    if (url.pathname === "/accounts" && req.method === "GET") {
+      const mbKey = mbKeyOf(url.searchParams.get("source"), url.searchParams.get("username"));
+      res.writeHead(200, cors);
+      res.end(JSON.stringify({ accounts: mbKey ? accountsFor(mbKey) : [] }));
+      return;
+    }
+
+    // POST /accounts/code {source,username,platform,handle} → issue a link code
+    if (url.pathname === "/accounts/code" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        const mbKey = mbKeyOf(j.source, j.username);
+        if (!mbKey) { res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Sign in first." })); return; }
+        res.writeHead(200, cors);
+        res.end(JSON.stringify(issueCode(mbKey, String(j.platform || ""), String(j.handle || ""))));
+      });
+      return;
+    }
+
+    // POST /accounts/verify {source,username,platform,handle,clipUrl} → confirm
+    if (url.pathname === "/accounts/verify" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", async () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        const mbKey = mbKeyOf(j.source, j.username);
+        if (!mbKey) { res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Sign in first." })); return; }
+        const out = await verifyAccount(mbKey, String(j.platform || ""), String(j.handle || ""), String(j.clipUrl || ""));
+        res.writeHead(200, cors);
+        res.end(JSON.stringify(out));
+      });
+      return;
+    }
+
+    res.writeHead(404, cors); res.end(JSON.stringify({ ok: false, error: "unknown accounts route" }));
+    return;
+  }
+
+  // ---- Distribution Cockpit (operator-only ROI ledger) ----
+  if (url.pathname.startsWith("/cockpit")) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, x-op-key",
+      "Content-Type": "application/json",
+    };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    if (!operatorKeyOk(url.searchParams.get("key") || req.headers["x-op-key"])) {
+      res.writeHead(401, cors); res.end(JSON.stringify({ ok: false, error: "bad operator key" })); return;
+    }
+
+    if (url.pathname === "/cockpit" && req.method === "GET") {
+      res.writeHead(200, cors); res.end(JSON.stringify(cockpitSummary())); return;
+    }
+    if ((url.pathname === "/cockpit/add" || url.pathname === "/cockpit/update" || url.pathname === "/cockpit/delete") && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        if (url.pathname === "/cockpit/add") addEntry(j);
+        else if (url.pathname === "/cockpit/update") updateEntry(String(j.id || ""), j);
+        else deleteEntry(String(j.id || ""));
+        res.writeHead(200, cors); res.end(JSON.stringify(cockpitSummary()));
+      });
+      return;
+    }
+    res.writeHead(404, cors); res.end(JSON.stringify({ ok: false, error: "unknown cockpit route" }));
+    return;
+  }
+
   // "The Tape" for the Market page: live equities + crypto + commodities.
   if (url.pathname === "/markets") {
     res.writeHead(200, {
@@ -1250,6 +1489,10 @@ server.listen(PORT, () => {
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, () => {
     console.log(`\n${sig} received, shutting down.`);
+    flushFloor();
+    flushClips();
+    flushAccounts();
+    flushCockpit();
     stopSources();
     wss.close();
     server.close(() => process.exit(0));

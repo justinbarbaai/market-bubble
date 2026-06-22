@@ -12,10 +12,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, ViewerSnapshot, Channels } from "./useHub";
+import type { ChatMessage, ViewerSnapshot, Channels, Floor } from "./useHub";
 import type { SourceKey } from "../components/logos";
 
-// Flip to `true` to re-enter promo/demo mode (fake live show for recording).
+// Flip to `true` to re-enter promo/demo mode (fake live show for recording) —
+// shows the live room + The Floor looking alive off-air, for local demos. OFF for
+// the live site so it uses the real hub feed.
 export const DEMO_MODE = false;
 
 // A Twitch VOD to roll in the "live" stream panel during the promo. Swap this id
@@ -160,10 +162,25 @@ function makeViewers(tick: number): ViewerSnapshot {
   };
 }
 
+// A believable "The Floor" leaderboard for the promo — top chatters ranked by
+// Bubbles, derived from the same fake names so it reads as live.
+function makeFloor(): Floor {
+  const srcs: SourceKey[] = ["twitch", "twitch", "kick", "twitch", "x", "kick", "twitch", "kick", "x", "twitch", "kick", "twitch"];
+  const top = NAMES.slice(0, 12).map((name, i) => ({
+    rank: i + 1,
+    name,
+    source: srcs[i % srcs.length],
+    points: Math.round(9120 - i * 560 - i * i * 9),
+  }));
+  return { top, users: 1327, bubbles: 86430 };
+}
+const DEMO_FLOOR = makeFloor();
+
 export type DemoFeed = {
   messages: ChatMessage[];
   viewers: ViewerSnapshot;
   channels: Channels;
+  floor: Floor;
   // Post a message as the viewer (typing from the site) — for the promo demo.
   say: (text: string, source: "twitch" | "kick", username: string) => void;
 };
@@ -201,5 +218,5 @@ export function useDemoFeed(): DemoFeed | null {
   };
 
   if (!DEMO_MODE) return null;
-  return { messages, viewers, channels: DEMO_CHANNELS, say };
+  return { messages, viewers, channels: DEMO_CHANNELS, floor: DEMO_FLOOR, say };
 }

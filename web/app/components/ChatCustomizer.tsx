@@ -85,7 +85,7 @@ export function ChatCustomizer({
         aria-hidden={!open}
         // when closed, take its form controls out of the tab order entirely
         // (aria-hidden alone leaves them focusable → WCAG aria-hidden-focus fail)
-        {...(open ? {} : { inert: true })}
+        {...(open ? {} : ({ inert: "" } as Record<string, unknown>))}
       >
         <div className="cc-head">
           <span className="cc-title">Your Chat</span>

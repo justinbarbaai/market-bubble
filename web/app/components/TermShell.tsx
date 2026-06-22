@@ -22,6 +22,7 @@ const NAV = [
   { href: "/market", label: "Market" },
   { href: "/news", label: "News" },
   { href: "/content", label: "Content" },
+  { href: "/clips", label: "Clips" },
 ];
 
 /**

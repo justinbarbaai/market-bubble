@@ -59,8 +59,86 @@ function Section({ title, count }: { title: string; count?: string }) {
 
 // The /content "Dispatch" — an editorial layout: masthead, a lead story, then
 // sectioned Clips / On X / Broadcasts.
+const FAN_PLATFORM: Record<string, string> = {
+  tiktok: "TikTok", youtube: "YouTube", x: "X", instagram: "Reels", twitch: "Twitch", kick: "Kick",
+};
+
+// Build a platform embed URL from a clip link so fan clips PLAY inline on the
+// Content page. Returns null for platforms with no clean iframe (X / Kick) — those
+// fall back to a click-out card.
+function fanEmbedSrc(platform: string, url: string, host: string): string | null {
+  try {
+    if (platform === "youtube") {
+      const u = new URL(url);
+      let id = u.searchParams.get("v");
+      if (!id && u.hostname.includes("youtu.be")) id = u.pathname.slice(1);
+      if (!id) { const m = u.pathname.match(/\/(shorts|embed)\/([^/?#]+)/); if (m) id = m[2]; }
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+    if (platform === "tiktok") { const m = url.match(/\/video\/(\d+)/); return m ? `https://www.tiktok.com/embed/v2/${m[1]}` : null; }
+    if (platform === "instagram") { const m = url.match(/\/(reel|p|tv)\/([^/?#]+)/); return m ? `https://www.instagram.com/${m[1]}/${m[2]}/embed` : null; }
+    if (platform === "twitch") {
+      const m = url.match(/clips\.twitch\.tv\/([^/?#]+)/) || url.match(/twitch\.tv\/[^/]+\/clip\/([^/?#]+)/);
+      return m && host ? `https://clips.twitch.tv/embed?clip=${m[1]}&parent=${host}&autoplay=false` : null;
+    }
+    return null;
+  } catch { return null; }
+}
+
+type FanClip = { id: string; url: string; platform: string; by: string; featured: boolean; views: number; bubbles: number };
+
+function FanClipEmbed({ clip, host }: { clip: FanClip; host: string }) {
+  const src = fanEmbedSrc(clip.platform, clip.url, host);
+  const vertical = clip.platform === "tiktok" || clip.platform === "instagram";
+  const caption = (
+    <div className="fanclip-cap">
+      <span className={`clip-badge plat-${clip.platform}`}>{FAN_PLATFORM[clip.platform] ?? clip.platform}</span>
+      <span className="fanclip-by">@{clip.by}</span>
+      {clip.featured && <span className="clip-feat">★</span>}
+      <span className="fanclip-bubbles">{clip.bubbles.toLocaleString()} ◆</span>
+    </div>
+  );
+  if (!src) {
+    // X / Kick (or unparseable) → click-out card
+    return (
+      <li className="fanclip fanclip-card">
+        <a className="clip-card-link" href={clip.url} target="_blank" rel="noreferrer">
+          <div className="clip-card-top">
+            <span className={`clip-badge plat-${clip.platform}`}>{FAN_PLATFORM[clip.platform] ?? clip.platform}</span>
+            {clip.featured && <span className="clip-feat">★ Featured</span>}
+          </div>
+          <div className="clip-card-body">
+            <span className="clip-card-by">@{clip.by}</span>
+            <div className="clip-card-stats">
+              {clip.views > 0 && <span className="clip-card-views">{clip.views.toLocaleString()} views</span>}
+              <span className="clip-card-bubbles">{clip.bubbles.toLocaleString()} ◆</span>
+            </div>
+          </div>
+          <span className="clip-card-go">watch ↗</span>
+        </a>
+      </li>
+    );
+  }
+  return (
+    <li className={`fanclip${vertical ? " vertical" : ""}${clip.featured ? " featured" : ""}`}>
+      <div className="fanclip-frame">
+        <iframe
+          src={src}
+          title={`Clip by @${clip.by}`}
+          loading="lazy"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+          allowFullScreen
+          frameBorder="0"
+          scrolling="no"
+        />
+      </div>
+      {caption}
+    </li>
+  );
+}
+
 export function ContentBoard() {
-  const { hubHttpUrl } = useHub();
+  const { hubHttpUrl, clips: fanClipsState } = useHub();
   const { play } = usePlayer();
   // Click a clip/VOD → play it on-site (modal). Falls back to the link (cmd-click).
   const open = (m: Media) => (e: React.MouseEvent) => {
@@ -69,6 +147,9 @@ export function ContentBoard() {
       play(m);
     }
   };
+  // Host for Twitch clip embeds (needs the page's domain as `parent`).
+  const [host, setHost] = useState("");
+  useEffect(() => { setHost(window.location.hostname); }, []);
   // Live clips + VODs from the hub (Twitch Helix); fall back to curated data.
   const [live, setLive] = useState<{ clips?: Clip[]; streams?: Stream[]; tweets?: Tweet[] } | null>(null);
   useEffect(() => {
@@ -92,6 +173,11 @@ export function ContentBoard() {
   const allTweets = live?.tweets?.length ? live.tweets : TWEETS;
   const lead = allClips[0];
   const clips = allClips.slice(1);
+  // Fan clips from Clip-to-Earn: the top of The Wall, featured ones first, played
+  // inline. (allFan arrives already ranked by views from the hub.) YouTube is left
+  // out — the show's clippers post short-form (TikTok / Reels / X), not YouTube.
+  const allFan = (fanClipsState?.clips ?? []).filter((c) => c.platform !== "youtube");
+  const fanClips = [...allFan].sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, 6);
 
   return (
     <div className="cnt-mag">
@@ -157,6 +243,18 @@ export function ContentBoard() {
           </a>
         ))}
       </div>
+
+      {/* fan clips — Clip-to-Earn (links out to the original posts) */}
+      {fanClips.length > 0 && (
+        <>
+          <Section title="Fan Clips" count="from the floor ↗ /clips" />
+          <ul className="fanclip-grid">
+            {fanClips.map((c) => (
+              <FanClipEmbed key={c.id} clip={c} host={host} />
+            ))}
+          </ul>
+        </>
+      )}
 
       {/* on X */}
       <Section title="On X" count={`${allTweets.length} posts`} />

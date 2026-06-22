@@ -107,6 +107,43 @@ export interface Poll {
   total: number;
 }
 
+// "The Floor" — the cross-platform engagement leaderboard. Viewers earn Bubbles
+// just by taking part (chatting / voting) on whatever platform they watch from.
+export interface FloorEntry {
+  rank: number;
+  name: string;
+  source: SourceKey;
+  points: number;
+}
+export interface Floor {
+  top: FloorEntry[];
+  users: number;
+  bubbles: number;
+}
+
+// Clip-to-Earn — a submitted clip of the show. The public gallery shows approved
+// (and featured) clips; the operator sees pending/rejected in Studio.
+export type ClipPlatform = "tiktok" | "youtube" | "x" | "instagram" | "twitch" | "kick";
+export interface Clip {
+  id: string;
+  url: string;
+  platform: ClipPlatform;
+  by: string; // clipper display name
+  bySource: SourceKey | "";
+  status: "pending" | "approved" | "rejected";
+  featured: boolean;
+  tier: "S" | "A" | "B" | null;
+  views: number;
+  bubbles: number;
+  author?: string | null; // clip's real author handle (from oEmbed)
+  attributed?: boolean; // author matches a verified handle of the submitter
+  createdAt: number;
+}
+export interface ClipsState {
+  clips: Clip[];
+  counts: { pending: number; approved: number };
+}
+
 const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL || "ws://localhost:8080";
 const MAX_BUFFER = 500;
 
@@ -152,6 +189,8 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
   const [siteLook, setSiteLook] = useState<LiveStyle | null>(null);
   const [viewers, setViewers] = useState<ViewerSnapshot | null>(null);
   const [poll, setPoll] = useState<Poll | null>(null);
+  const [floor, setFloor] = useState<Floor | null>(null);
+  const [clips, setClips] = useState<ClipsState | null>(null);
   const [profiles, setProfiles] = useState<Record<string, Profile | null>>({});
   const requestedProfiles = useRef<Set<string>>(new Set());
 
@@ -294,6 +333,10 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
         setSendResult({ ok: !!msg.ok, error: msg.error ?? null, ts: Date.now() });
       } else if (msg.type === "poll") {
         setPoll(msg.poll ?? null);
+      } else if (msg.type === "floor") {
+        setFloor(msg.floor ?? null);
+      } else if (msg.type === "clips") {
+        setClips({ clips: msg.clips ?? [], counts: msg.counts ?? { pending: 0, approved: 0 } });
       }
     };
 
@@ -408,6 +451,8 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
     pushSiteLook,
     viewers,
     poll,
+    floor,
+    clips,
     profiles,
     requestProfile,
     kickEnabled,

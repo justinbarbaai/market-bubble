@@ -6,6 +6,7 @@ import { ChatFeed, type Moderation } from "./components/ChatFeed";
 import { EmoteInput } from "./components/EmoteInput";
 import { useComposerEmotes } from "./lib/useComposerEmotes";
 import { PredictionCard } from "./components/PredictionCard";
+import { TheFloor } from "./components/TheFloor";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { MBLockup } from "./components/brand";
 import { Ticker } from "./components/Ticker";
@@ -79,6 +80,7 @@ export default function Home() {
     sendKick,
     hubHttpUrl,
     poll,
+    floor: _floor,
   } = useHub();
   const { session: kickSession } = useKickSession();
 
@@ -88,6 +90,7 @@ export default function Home() {
   const messages = demo?.messages ?? _messages;
   const viewers = demo?.viewers ?? _viewers;
   const serverChannels = demo?.channels ?? _serverChannels;
+  const floor = demo?.floor ?? _floor;
   const totalMessages = demo ? demo.messages.length : _totalMessages;
 
   const [parent, setParent] = useState("");
@@ -206,11 +209,11 @@ export default function Home() {
   // chat / stream / views, and free the panels to move anywhere (barrier -> 0).
   const [focusMode, setFocusMode] = useState(false);
   // Locked room: panels are fixed in a grid; viewers show/hide them, not drag.
-  const [show, setShow] = useState({ stream: true, chat: true, index: true });
+  const [show, setShow] = useState({ stream: true, chat: true, index: true, floor: true });
   useEffect(() => {
     try { const r = localStorage.getItem("mb.roomShow"); if (r) setShow((v) => ({ ...v, ...JSON.parse(r) })); } catch {}
   }, []);
-  const toggleShow = (k: "stream" | "chat" | "index") =>
+  const toggleShow = (k: "stream" | "chat" | "index" | "floor") =>
     setShow((v) => {
       const next = { ...v, [k]: !v[k] };
       try { localStorage.setItem("mb.roomShow", JSON.stringify(next)); } catch {}
@@ -252,6 +255,7 @@ export default function Home() {
       <button className={`room-tog ${show.stream ? "on" : ""}`} onClick={() => toggleShow("stream")} aria-pressed={show.stream} title="Show / hide the stream">Stream</button>
       <button className={`room-tog ${show.chat ? "on" : ""}`} onClick={() => toggleShow("chat")} aria-pressed={show.chat} title="Show / hide chat">Chat</button>
       <button className={`room-tog ${show.index ? "on" : ""}`} onClick={() => toggleShow("index")} aria-pressed={show.index} title="Show / hide live views">Views</button>
+      <button className={`room-tog ${show.floor ? "on" : ""}`} onClick={() => toggleShow("floor")} aria-pressed={show.floor} title="Show / hide The Floor leaderboard">Floor</button>
       <button className={`term-icon room-fs ${focusMode ? "on" : ""}`} onClick={toggleFocus} aria-pressed={focusMode} aria-label="Fullscreen" title={focusMode ? "Exit fullscreen (Esc)" : "True fullscreen — hides the browser bar too (Esc to exit)"}>⤢</button>
     </>
   );
@@ -665,8 +669,8 @@ export default function Home() {
         <OffAir />
       ) : (
       <div className="work">
-        <div className="room-grid" data-stream={show.stream ? "1" : "0"} data-chat={show.chat ? "1" : "0"} data-index={show.index ? "1" : "0"}>
-          {(show.stream || show.index || poll) && (
+        <div className="room-grid" data-stream={show.stream ? "1" : "0"} data-chat={show.chat ? "1" : "0"} data-index={show.index ? "1" : "0"} data-floor={show.floor ? "1" : "0"}>
+          {(show.stream || show.index || poll || (show.floor && floor)) && (
             <div className="room-left">
               {show.stream && (
                 <section className="rp rp-stream">
@@ -757,6 +761,7 @@ export default function Home() {
                   </div>
                 </section>
               )}
+              {show.floor && <TheFloor floor={floor} />}
               </div>
             </div>
           )}
@@ -779,8 +784,8 @@ export default function Home() {
               </div>
             </section>
           )}
-          {!show.stream && !show.chat && !show.index && (
-            <div className="room-allhidden"><span className="muted">Everything's hidden — use the Stream / Chat / Views buttons up top to bring panels back.</span></div>
+          {!show.stream && !show.chat && !show.index && !show.floor && (
+            <div className="room-allhidden"><span className="muted">Everything's hidden — use the Stream / Chat / Views / Floor buttons up top to bring panels back.</span></div>
           )}
         </div>
       </div>

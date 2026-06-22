@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChatFeed } from "../components/ChatFeed";
 import { useHub, type Poll } from "../lib/useHub";
@@ -49,12 +49,21 @@ function ControlPanel() {
   // The show = Banks on Twitch + Ansem on Kick. Connecting either merges its
   // chat into the one feed everyone sees. X chat arrives through the bridge
   // (the switch below), so X needs no setup here.
+  // Each host can have BOTH a Twitch and a Kick channel — whatever's filled in
+  // merges into the one feed. (X has nothing to do with this — it comes through
+  // the capture rig on the X Capture tab.)
   const [banksTwitch, setBanksTwitch] = useState("fazebanks");
+  const [banksKick, setBanksKick] = useState("");
+  const [ansemTwitch, setAnsemTwitch] = useState("");
   const [ansemKick, setAnsemKick] = useState("ansem");
 
   const [twitch, setTwitch] = useState<string[]>([]);
   const [kick, setKick] = useState<string[]>([]);
   const [seeded, setSeeded] = useState(false);
+  // Merge feedback — confirmed once the hub echoes the new config back.
+  const [mergeNote, setMergeNote] = useState("");
+  const [merging, setMerging] = useState(false);
+  const appliedRef = useRef("");
 
   // Guest streamers — connect a Twitch or Kick channel (not X) and their chat
   // merges into the show feed too.
@@ -110,12 +119,34 @@ function ControlPanel() {
   const applyHosts = () => {
     const guestTw = guests.filter((g) => g.platform === "twitch").map((g) => clean(g.channel));
     const guestKk = guests.filter((g) => g.platform === "kick").map((g) => clean(g.channel));
-    const tw = [...new Set([clean(banksTwitch), ...guestTw].filter(Boolean))];
-    const kk = [...new Set([clean(ansemKick), ...guestKk].filter(Boolean))];
+    const tw = [...new Set([clean(banksTwitch), clean(ansemTwitch), ...guestTw].filter(Boolean))];
+    const kk = [...new Set([clean(banksKick), clean(ansemKick), ...guestKk].filter(Boolean))];
+    if (!tw.length && !kk.length) {
+      setMerging(false);
+      setMergeNote("Add at least one Twitch or Kick channel first.");
+      return;
+    }
     setTwitch(tw);
     setKick(kk);
+    appliedRef.current = JSON.stringify([tw, kk]);
+    setMerging(true);
+    setMergeNote("Merging… pushing channels to the live room.");
+    // Twitch + Kick only — X chat is the capture rig's job, never the channel config.
     applyChannels({ twitch: tw, kick: kk, xQuery: "" });
   };
+
+  // Confirm the merge actually landed: the hub echoes its live config back as
+  // serverChannels. When that matches what we pushed, the live room is following it
+  // — so the operator gets real confirmation instead of a silent button.
+  useEffect(() => {
+    if (!appliedRef.current || !serverChannels) return;
+    if (JSON.stringify([serverChannels.twitch, serverChannels.kick]) !== appliedRef.current) return;
+    const tw = serverChannels.twitch, kk = serverChannels.kick;
+    const all = [...tw, ...kk];
+    setMerging(false);
+    setMergeNote(all.length ? `✓ Live room is now following: ${all.join(", ")}` : "✓ Cleared — no channels.");
+    appliedRef.current = "";
+  }, [serverChannels]);
 
   // ---- connect controls (rendered inside the platform blocks) ----
   const twitchConnect: ReactNode = twAuth ? (
@@ -149,6 +180,39 @@ function ControlPanel() {
     </p>
   );
 
+  const [tab, setTab] = useState<"show" | "bridge" | "engage" | "growth">("show");
+  const TABS = [
+    {
+      id: "show",
+      label: "Show",
+      eyebrow: "Operator console",
+      title: "Connect the show.",
+      sub: "Link Banks & Ansem's accounts — every account you connect merges into the one chat everyone sees. The chat look is each viewer's own, set from the live room.",
+    },
+    {
+      id: "bridge",
+      label: "X Capture",
+      eyebrow: "X capture",
+      title: "Bring in the X chat.",
+      sub: "X live chat + view counts come from the Chrome extension (the clean, primary feed); OCR is the automatic backup if the extension drops. This panel drives the capture rig on the show machine — start/stop, point it at a broadcast, Auto-follow, and watch its heartbeat.",
+    },
+    {
+      id: "engage",
+      label: "Engage",
+      eyebrow: "Audience",
+      title: "Play the room.",
+      sub: "Run the live Polymarket prediction poll and review Clip-to-Earn submissions — approve, tier, and feature clips. Both pay Bubbles on The Floor.",
+    },
+    {
+      id: "growth",
+      label: "Growth",
+      eyebrow: "Distribution",
+      title: "Track the reach.",
+      sub: "One ledger across paid clippers and placements — views-per-dollar, bot-cheap flags, and the weekly report you take to the founders.",
+    },
+  ] as const;
+  const active = TABS.find((t) => t.id === tab) ?? TABS[0];
+
   return (
     <div className="console">
       <header className="topbar">
@@ -168,15 +232,49 @@ function ControlPanel() {
       </header>
 
       <section className="studio-head">
-        <span className="studio-eyebrow">Operator console</span>
-        <h1 className="studio-h1">Connect the show.</h1>
-        <p className="studio-sub">
-          Link Banks &amp; Ansem&apos;s accounts — every account you connect merges into the one chat
-          everyone sees. The chat look is each viewer&apos;s own, set from the live room.
-        </p>
+        <span className="studio-eyebrow">{active.eyebrow}</span>
+        <h1 className="studio-h1">{active.title}</h1>
+        <p className="studio-sub">{active.sub}</p>
       </section>
 
-      {/* live source status */}
+      {/* tabs — keep the console organized like the site nav */}
+      <div className="studio-tabs" role="tablist" aria-label="Studio sections">
+        {TABS.map((tb) => (
+          <button
+            key={tb.id}
+            role="tab"
+            aria-selected={tab === tb.id}
+            className={`studio-tab ${tab === tb.id ? "on" : ""}`}
+            onClick={() => setTab(tb.id)}
+          >
+            {tb.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ENGAGE: prediction poll + Clip-to-Earn queue */}
+      {tab === "engage" && (
+        <>
+          <PollControl hubHttpUrl={hubHttpUrl} poll={poll} />
+          <ClipQueue hubHttpUrl={hubHttpUrl} />
+        </>
+      )}
+
+      {/* X CAPTURE: hub + bridge health, then the capture-rig remote control */}
+      {tab === "bridge" && (
+        <>
+          <HealthStrip hubHttpUrl={hubHttpUrl} />
+          <BridgeControl hubHttpUrl={hubHttpUrl} />
+        </>
+      )}
+
+      {/* GROWTH: distribution cockpit — ROI + bot flags + weekly report */}
+      {tab === "growth" && <CockpitControl hubHttpUrl={hubHttpUrl} />}
+
+      {/* SHOW: source status → host accounts (Twitch + Kick) → merge → preview */}
+      {tab === "show" && (
+      <>
+      {/* live Twitch + Kick source status (X lives on the X Capture tab) */}
       <div className="statusrow">
         {SOURCES.map((src) => {
           const on = statuses[src].connected;
@@ -195,38 +293,27 @@ function ControlPanel() {
         })}
       </div>
 
-      {/* pre-show health: hub + bridge freshness at a glance */}
-      <HealthStrip hubHttpUrl={hubHttpUrl} />
-
-      {/* remote control of the X-bridge running on the show machine */}
-      <BridgeControl hubHttpUrl={hubHttpUrl} />
-
-      {/* the live "chat vs the market" prediction poll */}
-      <PollControl hubHttpUrl={hubHttpUrl} poll={poll} />
-
-      {/* host account cards — connect + channel, the one place the feed is built */}
+      {/* host account cards — each host can add their OWN Twitch and/or Kick */}
       <div className="host-grid">
         <HostAccountCard name="Banks" role="Host" avatarHandle="Banks">
           <PlatformBlock
-            source="twitch"
-            value={banksTwitch}
-            onChange={setBanksTwitch}
-            placeholder="fazebanks"
-            on={!!twAuth}
-            stateLabel={twAuth ? "Connected" : "Not connected"}
-            connect={twitchConnect}
+            source="twitch" value={banksTwitch} onChange={setBanksTwitch} placeholder="fazebanks"
+            on={!!clean(banksTwitch)} stateLabel={twAuth ? "Connected" : clean(banksTwitch) ? "Reading" : "Add channel"} connect={twitchConnect}
+          />
+          <PlatformBlock
+            source="kick" value={banksKick} onChange={setBanksKick} placeholder="banks kick (optional)"
+            on={!!clean(banksKick)} stateLabel={clean(banksKick) ? "Reading" : "Optional"}
           />
         </HostAccountCard>
 
         <HostAccountCard name="Ansem" role="Co-host" avatarHandle="blknoiz06">
           <PlatformBlock
-            source="kick"
-            value={ansemKick}
-            onChange={setAnsemKick}
-            placeholder="ansem"
-            on={kickConnected}
-            stateLabel={kickConnected ? "Connected" : "Not connected"}
-            connect={kickConnect}
+            source="twitch" value={ansemTwitch} onChange={setAnsemTwitch} placeholder="ansem twitch (optional)"
+            on={!!clean(ansemTwitch)} stateLabel={clean(ansemTwitch) ? "Reading" : "Optional"}
+          />
+          <PlatformBlock
+            source="kick" value={ansemKick} onChange={setAnsemKick} placeholder="ansem"
+            on={!!clean(ansemKick)} stateLabel={kickConnected ? "Connected" : clean(ansemKick) ? "Reading" : "Add channel"} connect={kickConnect}
           />
         </HostAccountCard>
 
@@ -247,11 +334,14 @@ function ControlPanel() {
       </div>
 
       <div className="host-apply">
-        <button className="btn btn-gold" onClick={applyHosts}>Apply &amp; merge chat</button>
+        <button className="btn btn-gold" onClick={applyHosts} disabled={merging}>
+          {merging ? "Merging…" : "Apply & merge chat"}
+        </button>
         <span className="muted small">
-          Merges every connected account — Banks (Twitch) + Ansem (Kick) + guests — into the one
-          chat everyone sees. X chat comes in through the bridge above.
+          Reads every Twitch + Kick channel above into the one chat the live room shows. X chat comes
+          through the X Capture tab — separate from this.
         </span>
+        {mergeNote && <span className={`merge-note ${mergeNote.startsWith("✓") ? "ok" : ""}`}>{mergeNote}</span>}
       </div>
 
       {/* live chat preview */}
@@ -269,6 +359,8 @@ function ControlPanel() {
         </div>
         <p className="muted small">Server: <code>{hubUrl}</code> must be running to receive chat.</p>
       </section>
+      </>
+      )}
     </div>
   );
 }
@@ -361,7 +453,7 @@ function PlatformBlock({
   placeholder?: string;
   on: boolean;
   stateLabel: string;
-  connect: ReactNode;
+  connect?: ReactNode;
 }) {
   return (
     <div className="acct-block" data-platform={source}>
@@ -379,7 +471,7 @@ function PlatformBlock({
         placeholder={placeholder}
         spellCheck={false}
       />
-      <div className="acct-connect">{connect}</div>
+      {connect && <div className="acct-connect">{connect}</div>}
     </div>
   );
 }
@@ -787,6 +879,231 @@ function PollControl({ hubHttpUrl, poll }: { hubHttpUrl: string; poll: Poll | nu
               <span className="pollctl-result-q">{m.question}</span>
               <span className="muted small">YES {Math.round((m.odds?.[0] || 0) * 100)}%</span>
             </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+type StudioClip = {
+  id: string; url: string; platform: string; by: string; bySource: string;
+  status: string; featured: boolean; tier: string | null; views: number; bubbles: number;
+  author?: string | null; attributed?: boolean;
+};
+
+// Clip-to-Earn review queue — approve (with reach tier + views) / reject pending
+// clips, and feature the best. Approval pays Bubbles to the clipper's Floor balance.
+type CockpitRow = {
+  id: string; type: string; channel: string; label: string; platform: string; url: string;
+  spend: number; views: number; cpm: number | null; viewsPerDollar: number | null;
+  flagged: boolean; flagReason: string | null; removed: boolean;
+};
+type CockpitData = {
+  rows: CockpitRow[];
+  totals: { spend: number; views: number; blendedCpm: number | null; followers: number; count: number };
+  spendByType: { type: string; spend: number }[];
+  flags: { id: string; label: string; reason: string }[];
+  report: string;
+};
+
+// Distribution Cockpit — one ledger across paid clipper campaigns + placements
+// with reach-per-$, bot-cheap flags, and the weekly report. (Campaigns run on
+// Whop/Vyro/Discord/placements; this is the measurement layer on top.)
+function CockpitControl({ hubHttpUrl }: { hubHttpUrl: string }) {
+  const [opKey, setOpKey] = useState("");
+  const [data, setData] = useState<CockpitData | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [form, setForm] = useState({ type: "clipper", channel: "", label: "", platform: "", spend: "", views: "" });
+
+  useEffect(() => { try { setOpKey(localStorage.getItem("mb.operatorKey") || ""); } catch {} }, []);
+
+  const load = useCallback(async () => {
+    if (!opKey) return;
+    try {
+      const r = await fetch(`${hubHttpUrl}/cockpit?key=${encodeURIComponent(opKey)}`, { cache: "no-store" });
+      setData(await r.json());
+    } catch {}
+  }, [hubHttpUrl, opKey]);
+  useEffect(() => { load(); }, [load]);
+
+  const post = async (path: string, body: object) => {
+    const r = await fetch(`${hubHttpUrl}/cockpit/${path}?key=${encodeURIComponent(opKey)}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    setData(await r.json());
+  };
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.channel.trim() && !form.label.trim()) return;
+    await post("add", { ...form, spend: Number(form.spend) || 0, views: Number(form.views) || 0 });
+    setForm({ type: "clipper", channel: "", label: "", platform: "", spend: "", views: "" });
+  };
+  const fmt = (n: number) => Number(n || 0).toLocaleString("en-US");
+
+  const t = data?.totals;
+  const clipPct = t && t.spend > 0 ? Math.round(((data!.spendByType.find((s) => s.type === "clipper")?.spend || 0) / t.spend) * 100) : 0;
+
+  return (
+    <section className="pollctl">
+      <div className="pollctl-head">
+        <b>Distribution cockpit</b>
+        <span className="muted small">spend → reach across clippers + placements · views-per-$ · bot-cheap flags · weekly report</span>
+      </div>
+
+      {!opKey && <p className="muted small pollctl-note">Set your operator key in the Bridge control above first.</p>}
+
+      {t && (
+        <div className="ckpt-totals">
+          <div className="ckpt-stat"><span className="ckpt-stat-n">${fmt(t.spend)}</span><span className="ckpt-stat-l">spend</span></div>
+          <div className="ckpt-stat"><span className="ckpt-stat-n">{fmt(t.views)}</span><span className="ckpt-stat-l">views</span></div>
+          <div className="ckpt-stat"><span className="ckpt-stat-n">{t.blendedCpm != null ? `$${t.blendedCpm}` : "—"}</span><span className="ckpt-stat-l">blended CPM</span></div>
+          <div className="ckpt-stat"><span className="ckpt-stat-n">{clipPct}/{100 - clipPct}</span><span className="ckpt-stat-l">clip / place %</span></div>
+        </div>
+      )}
+
+      <form className="ckpt-form" onSubmit={add}>
+        <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+          <option value="clipper">Clipper</option>
+          <option value="placement">Placement</option>
+        </select>
+        <input placeholder="channel (Whop / Vyro / @account)" value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })} />
+        <input placeholder="label" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+        <input className="ckpt-sm" placeholder="$ spend" inputMode="numeric" value={form.spend} onChange={(e) => setForm({ ...form, spend: e.target.value })} />
+        <input className="ckpt-sm" placeholder="views" inputMode="numeric" value={form.views} onChange={(e) => setForm({ ...form, views: e.target.value })} />
+        <button type="submit">Add</button>
+      </form>
+
+      {data && data.rows.length > 0 && (
+        <div className="ckpt-rows">
+          {data.rows.map((r) => (
+            <div key={r.id} className={`ckpt-row${r.flagged ? " flagged" : ""}${r.removed ? " removed" : ""}`}>
+              <span className="ckpt-row-main">
+                <b>{r.label || r.channel}</b>
+                <span className="muted small">{r.channel}{r.channel && r.label ? " · " : ""}{r.type}{r.platform ? ` · ${r.platform}` : ""}</span>
+              </span>
+              <span className="ckpt-row-nums muted small">
+                ${fmt(r.spend)} · {fmt(r.views)} views · {r.cpm != null ? `$${r.cpm} CPM` : "—"}
+                {r.flagged && <span className="ckpt-flag" title={r.flagReason || ""}>⚠ bot?</span>}
+              </span>
+              <span className="ckpt-row-act">
+                {!r.removed && <button type="button" onClick={() => post("update", { id: r.id, removed: true })} title="Caught a bot — pull it">Pull</button>}
+                <button type="button" onClick={() => post("delete", { id: r.id })}>✕</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data?.report && (
+        <div className="ckpt-report">
+          <div className="ckpt-report-head">
+            <span className="muted small">Weekly report</span>
+            <button type="button" onClick={() => { navigator.clipboard?.writeText(data.report).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }}>
+              {copied ? "Copied ✓" : "Copy"}
+            </button>
+          </div>
+          <pre className="ckpt-report-pre">{data.report}</pre>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ClipQueue({ hubHttpUrl }: { hubHttpUrl: string }) {
+  const [opKey, setOpKey] = useState("");
+  const [clips, setClips] = useState<StudioClip[]>([]);
+  const [views, setViews] = useState<Record<string, string>>({});
+  const [note, setNote] = useState("");
+
+  useEffect(() => { try { setOpKey(localStorage.getItem("mb.operatorKey") || ""); } catch {} }, []);
+
+  const load = useCallback(async () => {
+    if (!opKey) return;
+    try {
+      const r = await fetch(`${hubHttpUrl}/clips/all?key=${encodeURIComponent(opKey)}`, { cache: "no-store" });
+      const j = await r.json();
+      setClips(j.clips || []);
+    } catch {}
+  }, [hubHttpUrl, opKey]);
+
+  useEffect(() => { load(); const t = setInterval(load, 12000); return () => clearInterval(t); }, [load]);
+
+  const decide = async (id: string, action: "approve" | "reject", tier?: string) => {
+    const v = Number(views[id]);
+    const r = await fetch(`${hubHttpUrl}/clips/decide?key=${encodeURIComponent(opKey)}`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, action, tier, views: Number.isFinite(v) ? v : undefined }),
+    });
+    const j = await r.json();
+    if (!j.ok) setNote(j.error || "Action failed."); else setNote("");
+    load();
+  };
+  const feature = async (id: string, on: boolean) => {
+    await fetch(`${hubHttpUrl}/clips/feature?key=${encodeURIComponent(opKey)}`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, on }),
+    }).catch(() => {});
+    load();
+  };
+
+  const pending = clips.filter((c) => c.status === "pending");
+  const approved = clips.filter((c) => c.status === "approved");
+
+  return (
+    <section className="pollctl">
+      <div className="pollctl-head">
+        <b>Clip-to-Earn queue</b>
+        <span className="muted small">approve + tier submitted clips (B 250 · A 1,000 · S 4,000 Bubbles) · feature pays +5,000</span>
+      </div>
+
+      {!opKey && <p className="muted small pollctl-note">Set your operator key in the Bridge control above first.</p>}
+      {note && <p className="muted small pollctl-note">{note}</p>}
+
+      <div className="clipq-group">
+        <div className="clipq-label">Pending {pending.length > 0 && <span className="clipq-count">{pending.length}</span>}</div>
+        {pending.length === 0 ? (
+          <p className="muted small">Nothing waiting.</p>
+        ) : pending.map((c) => (
+          <div key={c.id} className="clipq-row">
+            <div className="clipq-meta">
+              <span className="muted small">
+                {c.platform} · @{c.by}{" "}
+                {c.attributed ? (
+                  <span className="clipq-attr ok" title={`Clip is by @${c.author} — a verified account of @${c.by}`}>✓ author verified</span>
+                ) : c.author ? (
+                  <span className="clipq-attr warn" title={`Clip is by @${c.author}, not a verified account of @${c.by}`}>⚠ by @{c.author} (not linked)</span>
+                ) : null}
+              </span>
+              <a href={c.url} target="_blank" rel="noreferrer" className="clipq-url">{c.url}</a>
+            </div>
+            <div className="clipq-actions">
+              <input
+                className="clipq-views" inputMode="numeric" placeholder="views"
+                value={views[c.id] ?? ""} onChange={(e) => setViews((v) => ({ ...v, [c.id]: e.target.value }))}
+              />
+              <button type="button" onClick={() => decide(c.id, "approve", "S")}>S</button>
+              <button type="button" onClick={() => decide(c.id, "approve", "A")}>A</button>
+              <button type="button" onClick={() => decide(c.id, "approve", "B")}>B</button>
+              <button type="button" className="clipq-reject" onClick={() => decide(c.id, "reject")}>Reject</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {approved.length > 0 && (
+        <div className="clipq-group">
+          <div className="clipq-label">Approved</div>
+          {approved.map((c) => (
+            <div key={c.id} className="clipq-row">
+              <div className="clipq-meta">
+                <span className="muted small">{c.platform} · @{c.by} · tier {c.tier} · {c.views.toLocaleString()} views · {c.bubbles.toLocaleString()} ◆{c.featured ? " · ★ featured" : ""}</span>
+                <a href={c.url} target="_blank" rel="noreferrer" className="clipq-url">{c.url}</a>
+              </div>
+              <div className="clipq-actions">
+                <button type="button" onClick={() => feature(c.id, !c.featured)}>{c.featured ? "Unfeature" : "Feature ★"}</button>
+              </div>
+            </div>
           ))}
         </div>
       )}

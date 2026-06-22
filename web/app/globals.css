@@ -189,7 +189,9 @@ code {
 /* status cards */
 .statusrow {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Twitch + Kick only now (X lives on the X Capture tab) — two even columns,
+     no dead third slot. */
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
 }
 
@@ -8744,14 +8746,22 @@ body.panel-dragging iframe {
 
 /* ---- live prediction poll (the room vs Polymarket) ---- */
 .rp-poll { flex: 0 0 auto; }
-/* Prediction + Live Audience share a row below the video so the column isn't
-   tall + lopsided. Poll a bit wider; audience becomes a compact square beside it. */
-.room-substack { display: flex; gap: 14px; align-items: stretch; }
+/* Prediction + Live Audience + The Floor share a row below the video. The row is
+   height-capped so a long Floor scrolls INSIDE its panel instead of stretching the
+   row (which squished the video and stretched the audience). Kept tight so the
+   stream above keeps as much height as possible. */
+.room-substack { display: flex; gap: 14px; align-items: stretch; max-height: 210px; }
 .room-substack:empty { display: none; }
 .room-substack > .rp { flex: 1 1 0; min-width: 0; }
 .room-substack > .rp-poll { flex: 1.35 1 0; }
-.room-substack .rp-body-index .term-index-num { font-size: 27px; }
-.room-substack .rp-body-index .term-vol { gap: 6px; }
+/* Compact Live Audience so it fits the tight row without clipping. */
+.room-substack .rp-body-index { padding: 8px 14px 10px; }
+.room-substack .rp-body-index .term-index-num { font-size: 24px; }
+.room-substack .rp-body-index .term-rows { margin-top: 6px; padding-top: 6px; }
+/* Stream shown → the row is tight: drop the secondary vol stats (msgs/min etc. are
+   echoed in the chat header) and center the audience so the VIDEO gets the height. */
+.room-grid[data-stream="1"] .room-substack .rp-body-index { justify-content: center; }
+.room-grid[data-stream="1"] .room-substack .rp-body-index .term-vol { display: none; }
 .poll-meta b { color: var(--text); font-weight: 700; }
 .poll-body { padding: 13px 16px 14px; gap: 12px; overflow: visible; }
 .poll-q {
@@ -8834,6 +8844,236 @@ body.panel-dragging iframe {
 .poll-link { font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none; white-space: nowrap; }
 .poll-link:hover { color: var(--text); }
 
+/* ---- The Floor: cross-platform engagement leaderboard (Bubbles) ---- */
+/* Sits in the substack row with Prediction + Live Audience. One ranking across
+   Twitch + Kick + X — the top of the room rises here live. Brand colours only;
+   earnings read green (var(--up)) like gains on the tape. */
+.rp-floor { flex: 0 0 auto; min-height: 0; }
+.room-substack > .rp-floor { flex: 1.15 1 0; }
+.floor-body { padding: 4px 0 6px; overflow-y: auto; }
+.floor-empty {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.floor-empty b { color: var(--up); font-weight: 700; }
+.floor-list { list-style: none; margin: 0; padding: 0; }
+.floor-row {
+  display: grid;
+  grid-template-columns: 1.7em auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 16px;
+  border-top: 1px solid var(--hair);
+}
+.floor-row:first-child { border-top: 0; }
+.floor-rank {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.floor-row.top .floor-rank { color: var(--text); font-weight: 700; }
+.floor-src { display: inline-flex; opacity: 0.75; }
+.floor-name {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.floor-row.top .floor-name { font-weight: 600; }
+.floor-pts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--up);
+  font-variant-numeric: tabular-nums;
+}
+.floor-pts-unit { font-size: 8px; color: var(--muted); }
+
+/* ---- Clip-to-Earn (/clips) ---- */
+.clipboard { display: flex; flex-direction: column; gap: 22px; max-width: 1040px; }
+/* campaign rules / how-it-works */
+.clip-rules {
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 18px 20px;
+  box-shadow: inset 0 1px 0 var(--hair);
+}
+.clip-rules-kicker {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.clip-rules-title { margin: 4px 0 12px; font-family: var(--serif); font-size: 22px; font-weight: 700; color: var(--text); }
+.clip-steps { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.clip-steps li { font-size: 14px; color: var(--text); line-height: 1.45; }
+.clip-steps b { color: var(--text); font-weight: 700; }
+.clip-reqs {
+  margin: 0; padding: 12px 0 0; list-style: none;
+  border-top: 1px solid var(--hair);
+  display: flex; flex-wrap: wrap; gap: 6px 18px;
+}
+.clip-reqs li { position: relative; padding-left: 16px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.clip-reqs li::before { content: "·"; position: absolute; left: 4px; color: var(--up); font-weight: 700; }
+.clip-reqs b { color: var(--text); }
+
+/* connect accounts (identity) */
+.clip-accounts {
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.clip-acc-head { display: flex; flex-direction: column; gap: 2px; }
+.clip-acc-title { font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--text); }
+.clip-acc-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.clip-acc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.clip-acc-item { display: flex; align-items: center; gap: 9px; }
+.clip-acc-handle { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.clip-acc-status { margin-left: auto; font-family: var(--mono); font-size: 11px; }
+.clip-acc-status.ok { color: var(--up); font-weight: 700; }
+.clip-acc-status.pending { color: var(--muted); }
+.clip-acc-status.pending b { color: var(--text); }
+.clip-acc-connect { display: flex; gap: 8px; flex-wrap: wrap; }
+.clip-acc-select {
+  padding: 11px 12px; border: 1px solid var(--border-2); border-radius: 10px;
+  background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 12.5px; outline: none; cursor: pointer;
+}
+.clip-acc-connect .clip-input { flex: 1; min-width: 140px; }
+.clip-acc-verify { display: flex; flex-direction: column; gap: 8px; }
+.clip-acc-verify-top { display: flex; gap: 12px; align-items: flex-start; }
+.clip-acc-qr { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.clip-acc-qr img { display: block; border-radius: 8px; background: #fff; padding: 6px; }
+.clip-acc-qr-cap { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+.clip-acc-instr { margin: 0; font-size: 13px; color: var(--text); line-height: 1.5; }
+.clip-acc-instr b { color: var(--up); font-weight: 700; }
+.clip-acc-cancel { align-self: flex-start; background: none; border: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
+.clip-acc-cancel:hover { color: var(--text); }
+
+/* submit */
+.clip-submit { display: flex; flex-direction: column; gap: 8px; }
+.clip-submit-as { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.clip-submit-as b { color: var(--text); }
+.clip-as-src { text-transform: uppercase; letter-spacing: 0.4px; }
+.clip-submit-row { display: flex; gap: 8px; }
+.clip-input {
+  flex: 1; min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+}
+.clip-input:focus { border-color: color-mix(in srgb, var(--up) 60%, var(--border-2)); }
+.clip-submit-btn {
+  flex: 0 0 auto;
+  padding: 11px 18px;
+  border: 1px solid var(--up);
+  border-radius: 10px;
+  background: var(--up);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: opacity 0.14s, transform 0.05s;
+}
+.clip-submit-btn:hover:not(:disabled) { opacity: 0.9; }
+.clip-submit-btn:active:not(:disabled) { transform: translateY(1px); }
+.clip-submit-btn:disabled { opacity: 0.45; cursor: default; }
+.clip-submit-btn.ghost { background: transparent; color: var(--text); border-color: var(--border-2); }
+.clip-msg { margin: 2px 0 0; font-family: var(--mono); font-size: 12px; }
+.clip-msg.ok { color: var(--up); }
+.clip-msg.err { color: var(--down); }
+.clip-signin { display: flex; flex-direction: column; gap: 10px; }
+.clip-signin p { margin: 0; font-size: 14px; color: var(--text); }
+.clip-signin-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* gallery */
+.clip-gallery-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border-2); padding-bottom: 8px; }
+.clip-gallery-title { margin: 0; font-family: var(--serif); font-size: 19px; font-weight: 700; color: var(--text); }
+.clip-gallery-meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.clip-empty { margin: 14px 0; font-size: 13.5px; color: var(--muted); }
+.clip-grid {
+  list-style: none; margin: 14px 0 0; padding: 0;
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.clip-card {
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+.clip-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12); }
+.clip-card.featured { border-color: color-mix(in srgb, var(--up) 55%, var(--border-2)); }
+.clip-card-link { display: flex; flex-direction: column; gap: 10px; padding: 12px 13px; text-decoration: none; color: inherit; }
+.clip-card-top { display: flex; align-items: center; gap: 8px; }
+.clip-rank-no { font-family: var(--serif); font-size: 14px; font-weight: 700; color: var(--muted); min-width: 1.6em; }
+.clip-card.top3 .clip-rank-no { color: var(--up); }
+.clip-card-top .clip-feat { margin-left: auto; }
+.clip-card-top .clip-badge + .clip-feat { margin-left: auto; }
+.clip-badge {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.6px; text-transform: uppercase;
+  padding: 3px 7px; border-radius: 6px;
+  border: 1px solid currentColor;
+}
+.plat-tiktok { color: #ff2d55; }
+.plat-youtube { color: #cc4433; }
+.plat-x { color: var(--text); }
+.plat-instagram { color: #c13584; }
+.plat-twitch { color: #9147ff; }
+.plat-kick { color: var(--up); }
+.clip-feat { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--up); text-transform: uppercase; }
+.clip-card-body { display: flex; flex-direction: column; gap: 6px; }
+.clip-card-by { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip-card-stats { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.clip-card-views { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.clip-card-bubbles { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--up); }
+.clip-card-go { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* Content page: fan clips that PLAY inline (platform embeds) */
+.fanclip-grid {
+  list-style: none; margin: 12px 0 4px; padding: 0;
+  display: grid; gap: 14px; align-items: start;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+.fanclip {
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.fanclip.featured { border-color: color-mix(in srgb, var(--up) 55%, var(--border-2)); }
+.fanclip-frame { position: relative; aspect-ratio: 16 / 9; background: #000; }
+.fanclip.vertical .fanclip-frame { aspect-ratio: 9 / 16; max-height: 460px; }
+.fanclip-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.fanclip-cap { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+.fanclip-by { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fanclip-bubbles { margin-left: auto; font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--up); }
+.fanclip-card { border: 1px solid var(--border-2); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.clip-card:hover .clip-card-go { color: var(--text); }
+
 /* studio: prediction-poll control */
 .pollctl { margin-top: 16px; padding: 16px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--panel); }
 .pollctl-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
@@ -8863,6 +9103,82 @@ body.panel-dragging iframe {
 }
 .pollctl-result:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
 .pollctl-result-q { flex: 1; }
+
+/* studio: Clip-to-Earn review queue */
+.clipq-group { margin-top: 12px; }
+.clipq-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.clipq-count { background: var(--up); color: var(--bg); border-radius: 999px; padding: 0 6px; font-size: 10px; font-weight: 700; }
+.clipq-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 9px; margin-bottom: 6px; }
+.clipq-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.clipq-url { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.clipq-url:hover { color: var(--text); }
+.clipq-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.clipq-views { width: 78px; padding: 6px 8px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 12px; outline: none; }
+.clipq-actions button { padding: 6px 11px; border-radius: 7px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 700; }
+.clipq-actions button:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.clipq-actions .clipq-reject { font-weight: 400; color: var(--down); border-color: color-mix(in srgb, var(--down) 40%, var(--border-2)); }
+.clipq-attr { font-family: var(--mono); font-size: 10.5px; font-weight: 700; }
+.clipq-attr.ok { color: var(--up); }
+.clipq-attr.warn { color: var(--down); }
+
+/* studio: merge-chat confirmation */
+.merge-note { display: block; width: 100%; margin-top: 6px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.merge-note.ok { color: var(--up); font-weight: 700; }
+
+/* studio: section tabs (organize the console like the site nav) */
+.studio-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 18px 0 14px;
+  padding: 4px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--panel);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.studio-tab {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+.studio-tab.on { background: var(--text); color: var(--bg); }
+.studio-tab:not(.on):hover { color: var(--text); }
+
+/* studio: Distribution cockpit */
+.ckpt-totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.ckpt-stat { border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 11px; display: flex; flex-direction: column; gap: 2px; }
+.ckpt-stat-n { font-family: var(--serif); font-size: 19px; font-weight: 700; color: var(--text); }
+.ckpt-stat-l { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+.ckpt-form { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ckpt-form select, .ckpt-form input { padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 12.5px; outline: none; }
+.ckpt-form input { flex: 1; min-width: 110px; }
+.ckpt-form .ckpt-sm { flex: 0 0 auto; width: 84px; font-family: var(--mono); }
+.ckpt-form button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--up); background: var(--up); color: var(--bg); font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.ckpt-rows { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.ckpt-row { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border: 1px solid var(--border-2); border-radius: 9px; }
+.ckpt-row.flagged { border-color: color-mix(in srgb, var(--down) 50%, var(--border-2)); background: color-mix(in srgb, var(--down) 6%, transparent); }
+.ckpt-row.removed { opacity: 0.45; text-decoration: line-through; }
+.ckpt-row-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.ckpt-row-nums { flex: 0 0 auto; white-space: nowrap; }
+.ckpt-flag { color: var(--down); font-weight: 700; margin-left: 8px; }
+.ckpt-row-act { display: flex; gap: 5px; flex: 0 0 auto; }
+.ckpt-row-act button { padding: 5px 9px; border-radius: 7px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 11.5px; }
+.ckpt-report { border: 1px solid var(--border-2); border-radius: 9px; overflow: hidden; }
+.ckpt-report-head { display: flex; align-items: center; justify-content: space-between; padding: 7px 11px; border-bottom: 1px solid var(--border-2); }
+.ckpt-report-head button { padding: 4px 11px; border-radius: 7px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 11.5px; }
+.ckpt-report-pre { margin: 0; padding: 12px 14px; font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--text); white-space: pre-wrap; overflow-x: auto; }
 
 /* header show/hide toggles — segmented pill like cinema's switch */
 .room-toggles {
@@ -8930,7 +9246,11 @@ body.panel-dragging iframe {
   .term-room .rp-stream { order: 1; flex: none; min-height: 0; }
   .term-room .rp-poll   { order: 2; }
   .term-room .rp-chat   { order: 3; width: auto; height: auto; min-height: 52vh; }
-  .term-room .rp-index  { order: 4; }
+  /* The Floor sits below chat on mobile (it's a long list); reset the desktop
+     basis:0 flex so it sizes to its content instead of collapsing in the column. */
+  .term-room .rp-floor  { order: 4; flex: none; }
+  .term-room .rp-floor .floor-body { overflow: visible; }
+  .term-room .rp-index  { order: 5; }
 
   /* lighter panel chrome + smaller headers so it reads as mobile, not desktop */
   .term-room .rp { border-radius: 12px; }
@@ -8958,10 +9278,21 @@ body.panel-dragging iframe {
 
 /* ---- Stream hidden → chat is the focus (it goes on-stream). Chat fills the
    main area; Live Audience shrinks to a narrow side rail with stacked stats. ---- */
-.room-grid[data-stream="0"] .room-left { flex: 0 0 clamp(220px, 22%, 300px); }
+.room-grid[data-stream="0"] .room-left { flex: 0 0 clamp(240px, 24%, 320px); }
 .room-grid[data-stream="0"] .rp-chat { width: auto; flex: 1; min-height: 0; }
-.room-grid[data-stream="0"] .rp-index { flex: 1; min-height: 0; }
-.room-grid[data-stream="0"] .rp-index .rp-body { flex: 1; }
+/* In the narrow rail the substack must STACK (Live Audience over The Floor) — side
+   by side here crushed both to ~120px and truncated the Floor names. */
+.room-grid[data-stream="0"] .room-substack { flex-direction: column; max-height: none; flex: 1; min-height: 0; }
+.room-grid[data-stream="0"] .room-substack > .rp,
+.room-grid[data-stream="0"] .room-substack > .rp-poll,
+.room-grid[data-stream="0"] .room-substack > .rp-floor { flex: 0 0 auto; }
+.room-grid[data-stream="0"] .rp-index { flex: 0 0 auto; min-height: 0; }
+.room-grid[data-stream="0"] .rp-index .rp-body { flex: 0 0 auto; }
+/* The Floor takes the leftover rail height and scrolls inside it. */
+.room-grid[data-stream="0"][data-floor="1"] .room-substack > .rp-floor { flex: 1 1 auto; min-height: 120px; }
+/* Live Audience alone in the rail (Floor off) → let it fill again. */
+.room-grid[data-stream="0"][data-floor="0"] .rp-index { flex: 1; }
+.room-grid[data-stream="0"][data-floor="0"] .rp-index .rp-body { flex: 1; }
 /* chat is the on-stream feature now → read it bigger/cleaner; biggest when it's
    the ONLY panel (pure aggregated chat to throw on the broadcast). */
 .room-grid[data-stream="0"] .rp-chat .cf-root { font-size: 15px; }

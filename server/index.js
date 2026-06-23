@@ -16,7 +16,7 @@ import { searchMarkets, getMarket } from "./sources/polymarket.js";
 import { loadFloor, flushFloor, recordMessage, recordVote, floorPayload, awardBubbles } from "./floor.js";
 import { loadClips, flushClips, submitClip, decideClip, featureClip, clipsPayload, setAttribution } from "./clips.js";
 import { loadAccounts, flushAccounts, issueCode, verifyAccount, accountsFor, oembed, isVerifiedHandle, VERIFIABLE } from "./accounts.js";
-import { loadCockpit, flushCockpit, addEntry, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
+import { loadCockpit, flushCockpit, addEntry, addEntries, addSnapshot, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -1226,15 +1226,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/cockpit" && req.method === "GET") {
       res.writeHead(200, cors); res.end(JSON.stringify(cockpitSummary())); return;
     }
-    if ((url.pathname === "/cockpit/add" || url.pathname === "/cockpit/update" || url.pathname === "/cockpit/delete") && req.method === "POST") {
+    const cockpitWrite = ["/cockpit/add", "/cockpit/update", "/cockpit/delete", "/cockpit/import", "/cockpit/snapshot"];
+    if (cockpitWrite.includes(url.pathname) && req.method === "POST") {
       let body = "";
-      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("data", (c) => { body += c; if (body.length > 4e6) req.destroy(); }); // CSV imports can be large
       req.on("end", () => {
         let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        let extra = {};
         if (url.pathname === "/cockpit/add") addEntry(j);
         else if (url.pathname === "/cockpit/update") updateEntry(String(j.id || ""), j);
-        else deleteEntry(String(j.id || ""));
-        res.writeHead(200, cors); res.end(JSON.stringify(cockpitSummary()));
+        else if (url.pathname === "/cockpit/delete") deleteEntry(String(j.id || ""));
+        else if (url.pathname === "/cockpit/import") extra.imported = addEntries(Array.isArray(j.entries) ? j.entries : []);
+        else if (url.pathname === "/cockpit/snapshot") addSnapshot({ reset: !!j.reset });
+        res.writeHead(200, cors); res.end(JSON.stringify({ ...cockpitSummary(), ...extra }));
       });
       return;
     }

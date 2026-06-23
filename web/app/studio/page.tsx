@@ -899,13 +899,51 @@ type CockpitRow = {
   spend: number; views: number; cpm: number | null; viewsPerDollar: number | null;
   flagged: boolean; flagReason: string | null; removed: boolean;
 };
+type CockpitLeader = { rank: number; id: string; label: string; channel: string; type: string; spend: number; views: number; cpm: number | null; viewsPerDollar: number | null; flagged: boolean };
+type CockpitSnap = { ts: number; spend: number; views: number; cpm: number | null; followers: number; count: number };
 type CockpitData = {
   rows: CockpitRow[];
-  totals: { spend: number; views: number; blendedCpm: number | null; followers: number; count: number };
+  totals: { spend: number; views: number; blendedCpm: number | null; followers: number; costPerFollower: number | null; count: number };
   spendByType: { type: string; spend: number }[];
+  leaderboard: CockpitLeader[];
+  snapshots: CockpitSnap[];
   flags: { id: string; label: string; reason: string }[];
   report: string;
 };
+
+// Parse a CSV export (Whop / Vyro campaign data) into cockpit entries. Handles
+// quoted fields and maps columns by keyword so it works across export formats.
+function parseCockpitCsv(text: string): { type: string; channel: string; label: string; spend: number; views: number; followerDelta: number }[] {
+  const rows: string[][] = [];
+  let field = "", row: string[] = [], inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) { if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; } else field += c; }
+    else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (c !== "\r") field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  const header = (rows.shift() || []).map((h) => h.trim().toLowerCase());
+  const numv = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : 0; };
+  return rows
+    .filter((r) => r.some((c) => c.trim()))
+    .map((r) => {
+      const o: Record<string, string> = {};
+      header.forEach((h, i) => (o[h] = (r[i] || "").trim()));
+      const find = (kw: string[]) => { for (const k in o) if (kw.some((w) => k.includes(w))) return o[k]; return ""; };
+      const typeRaw = find(["type", "kind"]).toLowerCase();
+      return {
+        type: typeRaw.includes("place") ? "placement" : "clipper",
+        channel: find(["channel", "platform", "source", "server", "campaign", "seller", "account"]),
+        label: find(["clipper", "creator", "handle", "username", "name", "label", "title", "video", "clip"]),
+        spend: numv(find(["spend", "cost", "amount", "paid", "budget", "payout"])),
+        views: numv(find(["view", "play", "impression", "reach"])),
+        followerDelta: numv(find(["follow"])),
+      };
+    });
+}
 
 // Distribution Cockpit — one ledger across paid clipper campaigns + placements
 // with reach-per-$, bot-cheap flags, and the weekly report. (Campaigns run on
@@ -914,16 +952,15 @@ function CockpitControl({ hubHttpUrl }: { hubHttpUrl: string }) {
   const [opKey, setOpKey] = useState("");
   const [data, setData] = useState<CockpitData | null>(null);
   const [copied, setCopied] = useState(false);
+  const [msg, setMsg] = useState("");
   const [form, setForm] = useState({ type: "clipper", channel: "", label: "", platform: "", spend: "", views: "" });
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { try { setOpKey(localStorage.getItem("mb.operatorKey") || ""); } catch {} }, []);
 
   const load = useCallback(async () => {
     if (!opKey) return;
-    try {
-      const r = await fetch(`${hubHttpUrl}/cockpit?key=${encodeURIComponent(opKey)}`, { cache: "no-store" });
-      setData(await r.json());
-    } catch {}
+    try { const r = await fetch(`${hubHttpUrl}/cockpit?key=${encodeURIComponent(opKey)}`, { cache: "no-store" }); setData(await r.json()); } catch {}
   }, [hubHttpUrl, opKey]);
   useEffect(() => { load(); }, [load]);
 
@@ -931,24 +968,41 @@ function CockpitControl({ hubHttpUrl }: { hubHttpUrl: string }) {
     const r = await fetch(`${hubHttpUrl}/cockpit/${path}?key=${encodeURIComponent(opKey)}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
-    setData(await r.json());
+    return r.json();
   };
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.channel.trim() && !form.label.trim()) return;
-    await post("add", { ...form, spend: Number(form.spend) || 0, views: Number(form.views) || 0 });
+    setData(await post("add", { ...form, spend: Number(form.spend) || 0, views: Number(form.views) || 0 }));
     setForm({ type: "clipper", channel: "", label: "", platform: "", spend: "", views: "" });
+  };
+  const importFile = async (file: File) => {
+    setMsg("Importing…");
+    try {
+      const entries = parseCockpitCsv(await file.text());
+      if (!entries.length) { setMsg("No rows found in that CSV."); return; }
+      const j = await post("import", { entries });
+      setData(j);
+      setMsg(`Imported ${j.imported ?? entries.length} rows from ${file.name}.`);
+    } catch { setMsg("Couldn't read that file."); }
+  };
+  const snapshot = async (reset: boolean) => {
+    if (reset && !confirm("Save this week to the trend and clear the ledger for next week?")) return;
+    setData(await post("snapshot", { reset }));
+    setMsg(reset ? "Week closed — snapshot saved, ledger cleared." : "Snapshot saved to the trend.");
   };
   const fmt = (n: number) => Number(n || 0).toLocaleString("en-US");
 
   const t = data?.totals;
   const clipPct = t && t.spend > 0 ? Math.round(((data!.spendByType.find((s) => s.type === "clipper")?.spend || 0) / t.spend) * 100) : 0;
+  const snaps = data?.snapshots ?? [];
+  const maxSnapViews = Math.max(1, ...snaps.map((s) => s.views));
 
   return (
     <section className="pollctl">
       <div className="pollctl-head">
         <b>Distribution cockpit</b>
-        <span className="muted small">spend → reach across clippers + placements · views-per-$ · bot-cheap flags · weekly report</span>
+        <span className="muted small">ROI leaderboard · bot flags · week-over-week trend · weekly report · Whop/Vyro CSV import</span>
       </div>
 
       {!opKey && <p className="muted small pollctl-note">Set your operator key in the Bridge control above first.</p>}
@@ -958,6 +1012,7 @@ function CockpitControl({ hubHttpUrl }: { hubHttpUrl: string }) {
           <div className="ckpt-stat"><span className="ckpt-stat-n">${fmt(t.spend)}</span><span className="ckpt-stat-l">spend</span></div>
           <div className="ckpt-stat"><span className="ckpt-stat-n">{fmt(t.views)}</span><span className="ckpt-stat-l">views</span></div>
           <div className="ckpt-stat"><span className="ckpt-stat-n">{t.blendedCpm != null ? `$${t.blendedCpm}` : "—"}</span><span className="ckpt-stat-l">blended CPM</span></div>
+          <div className="ckpt-stat"><span className="ckpt-stat-n">{t.costPerFollower != null ? `$${t.costPerFollower}` : "—"}</span><span className="ckpt-stat-l">$/follower</span></div>
           <div className="ckpt-stat"><span className="ckpt-stat-n">{clipPct}/{100 - clipPct}</span><span className="ckpt-stat-l">clip / place %</span></div>
         </div>
       )}
@@ -973,25 +1028,64 @@ function CockpitControl({ hubHttpUrl }: { hubHttpUrl: string }) {
         <input className="ckpt-sm" placeholder="views" inputMode="numeric" value={form.views} onChange={(e) => setForm({ ...form, views: e.target.value })} />
         <button type="submit">Add</button>
       </form>
+      <div className="ckpt-toolbar">
+        <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.currentTarget.value = ""; }} />
+        <button type="button" onClick={() => fileRef.current?.click()}>↑ Import CSV (Whop / Vyro)</button>
+        <button type="button" onClick={() => snapshot(false)}>Save snapshot</button>
+        <button type="button" onClick={() => snapshot(true)}>Close week ↺</button>
+        {msg && <span className="muted small ckpt-msg">{msg}</span>}
+      </div>
 
-      {data && data.rows.length > 0 && (
-        <div className="ckpt-rows">
-          {data.rows.map((r) => (
-            <div key={r.id} className={`ckpt-row${r.flagged ? " flagged" : ""}${r.removed ? " removed" : ""}`}>
-              <span className="ckpt-row-main">
-                <b>{r.label || r.channel}</b>
-                <span className="muted small">{r.channel}{r.channel && r.label ? " · " : ""}{r.type}{r.platform ? ` · ${r.platform}` : ""}</span>
-              </span>
-              <span className="ckpt-row-nums muted small">
-                ${fmt(r.spend)} · {fmt(r.views)} views · {r.cpm != null ? `$${r.cpm} CPM` : "—"}
-                {r.flagged && <span className="ckpt-flag" title={r.flagReason || ""}>⚠ bot?</span>}
-              </span>
-              <span className="ckpt-row-act">
-                {!r.removed && <button type="button" onClick={() => post("update", { id: r.id, removed: true })} title="Caught a bot — pull it">Pull</button>}
-                <button type="button" onClick={() => post("delete", { id: r.id })}>✕</button>
-              </span>
+      {data && data.leaderboard.length > 0 && (
+        <div className="ckpt-group">
+          <div className="ckpt-group-label">ROI leaderboard · views per $</div>
+          {data.leaderboard.slice(0, 10).map((l) => (
+            <div key={l.id} className={`ckpt-lead${l.flagged ? " flagged" : ""}`}>
+              <span className="ckpt-lead-rank">{l.rank}</span>
+              <span className="ckpt-lead-name"><b>{l.label}</b> <span className="muted small">{l.type}</span></span>
+              <span className="ckpt-lead-vpd">{fmt(Math.round(l.viewsPerDollar || 0))}<span className="muted small"> /$</span></span>
+              <span className="muted small ckpt-lead-cpm">{l.cpm != null ? `$${l.cpm} CPM` : "—"}{l.flagged ? " ⚠" : ""}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {snaps.length > 0 && (
+        <div className="ckpt-group">
+          <div className="ckpt-group-label">Week-over-week · reach &amp; CPM</div>
+          <div className="ckpt-trend">
+            {snaps.slice(-12).map((s, i) => (
+              <div key={i} className="ckpt-trend-col" title={`${fmt(s.views)} views · $${fmt(s.spend)} · ${s.cpm != null ? `$${s.cpm} CPM` : "—"}`}>
+                <span className="ckpt-trend-bar" style={{ height: `${Math.max(4, Math.round((s.views / maxSnapViews) * 100))}%` }} />
+                <span className="ckpt-trend-cpm">{s.cpm != null ? `$${s.cpm}` : "—"}</span>
+              </div>
+            ))}
+          </div>
+          <div className="muted small">bars = views per snapshot · number = blended CPM (lower = more efficient)</div>
+        </div>
+      )}
+
+      {data && data.rows.length > 0 && (
+        <div className="ckpt-group">
+          <div className="ckpt-group-label">Ledger</div>
+          <div className="ckpt-rows">
+            {data.rows.map((r) => (
+              <div key={r.id} className={`ckpt-row${r.flagged ? " flagged" : ""}${r.removed ? " removed" : ""}`}>
+                <span className="ckpt-row-main">
+                  <b>{r.label || r.channel}</b>
+                  <span className="muted small">{r.channel}{r.channel && r.label ? " · " : ""}{r.type}{r.platform ? ` · ${r.platform}` : ""}</span>
+                </span>
+                <span className="ckpt-row-nums muted small">
+                  ${fmt(r.spend)} · {fmt(r.views)} views · {r.cpm != null ? `$${r.cpm} CPM` : "—"}
+                  {r.flagged && <span className="ckpt-flag" title={r.flagReason || ""}>⚠ bot?</span>}
+                </span>
+                <span className="ckpt-row-act">
+                  {!r.removed && <button type="button" onClick={async () => setData(await post("update", { id: r.id, removed: true }))} title="Caught a bot — pull it">Pull</button>}
+                  <button type="button" onClick={async () => setData(await post("delete", { id: r.id }))}>✕</button>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

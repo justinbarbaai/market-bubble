@@ -18,6 +18,8 @@ const COCKPIT_FILE = new URL("./.mb-cockpit.json", import.meta.url);
 
 // id -> entry { id, ts, type, channel, label, platform, url, spend, views, followerDelta, removed, note }
 let entries = Object.create(null);
+// week-over-week trend points: [{ ts, spend, views, cpm, followers, count }]
+let snapshots = [];
 let dirty = false;
 
 const TYPES = ["clipper", "placement"];
@@ -25,11 +27,12 @@ const TYPES = ["clipper", "placement"];
 export async function loadCockpit() {
   const raw = await loadDoc("mb:cockpit", COCKPIT_FILE);
   if (raw && typeof raw === "object" && raw.entries) entries = raw.entries;
+  if (Array.isArray(raw?.snapshots)) snapshots = raw.snapshots;
 }
 export function flushCockpit() {
   if (!dirty) return;
   dirty = false;
-  saveDoc("mb:cockpit", COCKPIT_FILE, { entries, savedAt: Date.now() }).catch((e) => {
+  saveDoc("mb:cockpit", COCKPIT_FILE, { entries, snapshots, savedAt: Date.now() }).catch((e) => {
     dirty = true;
     console.warn("[cockpit] save failed:", e.message);
   });
@@ -56,6 +59,19 @@ export function addEntry(e = {}) {
   entries[id] = entry;
   dirty = true;
   return entry;
+}
+
+// Bulk add — used by CSV import (a Whop/Vyro campaign export). Returns the count.
+export function addEntries(arr = []) {
+  let n = 0;
+  for (const e of arr) {
+    if (!e) continue;
+    // skip totally empty rows
+    if (!String(e.channel || "").trim() && !String(e.label || "").trim() && !num(e.spend) && !num(e.views)) continue;
+    addEntry(e);
+    n++;
+  }
+  return n;
 }
 
 export function updateEntry(id, patch = {}) {
@@ -85,6 +101,32 @@ const median = (arr) => {
 };
 const cpm = (spend, views) => (views > 0 ? (spend / views) * 1000 : null); // $ per 1k views
 const round = (n, d = 0) => { const f = 10 ** d; return Math.round(n * f) / f; };
+
+// Current rolled-up totals across active entries (shared by summary + snapshot).
+function activeTotals() {
+  const active = Object.values(entries).filter((e) => !e.removed);
+  const spend = active.reduce((s, e) => s + e.spend, 0);
+  const views = active.reduce((s, e) => s + e.views, 0);
+  const followers = active.reduce((s, e) => s + (e.followerDelta || 0), 0);
+  return {
+    spend: round(spend, 2),
+    views,
+    followers,
+    count: active.length,
+    blendedCpm: views > 0 ? round((spend / views) * 1000, 2) : null,
+  };
+}
+
+// Snapshot the current week's totals onto the trend, then (optionally) clear the
+// ledger so next week starts fresh. The chart reads the snapshot history.
+export function addSnapshot({ reset = false } = {}) {
+  const t = activeTotals();
+  snapshots.push({ ts: Date.now(), spend: t.spend, views: t.views, cpm: t.blendedCpm, followers: t.followers, count: t.count });
+  if (snapshots.length > 52) snapshots = snapshots.slice(-52); // keep ~a year of weeks
+  if (reset) entries = Object.create(null); // archive the week; start clean
+  dirty = true;
+  return snapshots[snapshots.length - 1];
+}
 
 // The cockpit's computed view: per-entry ROI, totals, spend split, bot flags, and
 // the generated weekly report.
@@ -132,9 +174,16 @@ export function cockpitSummary() {
   const flags = rows.filter((r) => r.flagged).map((r) => ({ id: r.id, label: r.label || r.channel, reason: r.flagReason }));
   const blendedCpm = totalViews > 0 ? round((totalSpend / totalViews) * 1000, 2) : null;
 
-  const ranked = active.filter((e) => e.spend > 0 && e.views > 0).sort((a, b) => b.views / b.spend - a.views / a.spend);
-  const best = ranked[0] || null;
-  const worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
+  // ROI leaderboard — every active line ranked by reach-per-dollar (best first).
+  const leaderboard = rows
+    .filter((r) => !r.removed && r.viewsPerDollar != null)
+    .sort((a, b) => b.viewsPerDollar - a.viewsPerDollar)
+    .map((r, i) => ({
+      rank: i + 1, id: r.id, label: r.label || r.channel, channel: r.channel, type: r.type,
+      spend: r.spend, views: r.views, cpm: r.cpm, viewsPerDollar: r.viewsPerDollar, flagged: r.flagged,
+    }));
+  const best = leaderboard[0] || null;
+  const worst = leaderboard.length > 1 ? leaderboard[leaderboard.length - 1] : null;
 
   return {
     type: "cockpit",
@@ -144,12 +193,19 @@ export function cockpitSummary() {
       views: totalViews,
       blendedCpm,
       followers: totalFollowers,
+      costPerFollower: totalFollowers > 0 ? round(totalSpend / totalFollowers, 2) : null,
       count: active.length,
     },
     spendByType,
     byChannel,
+    leaderboard,
+    snapshots,
     flags,
-    report: buildReport({ totalSpend, totalViews, blendedCpm, totalFollowers, spendByType, best, worst, flags, byChannel }),
+    report: buildReport({
+      totalSpend, totalViews, blendedCpm, totalFollowers, spendByType, flags, byChannel,
+      best: best && { label: best.label, views: best.views, spend: best.spend },
+      worst: worst && { label: worst.label, views: worst.views, spend: worst.spend },
+    }),
   };
 }
 

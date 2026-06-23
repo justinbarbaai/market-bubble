@@ -1,5 +1,5 @@
-import fs from "node:fs";
 import crypto from "node:crypto";
+import { loadDoc, saveDoc } from "./store.js";
 
 // ---- Distribution Cockpit ----
 // The internal command center for the show's paid-distribution operation (the
@@ -22,22 +22,17 @@ let dirty = false;
 
 const TYPES = ["clipper", "placement"];
 
-export function loadCockpit() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(COCKPIT_FILE, "utf8"));
-    if (raw && typeof raw === "object" && raw.entries) entries = raw.entries;
-  } catch {
-    /* none yet */
-  }
+export async function loadCockpit() {
+  const raw = await loadDoc("mb:cockpit", COCKPIT_FILE);
+  if (raw && typeof raw === "object" && raw.entries) entries = raw.entries;
 }
 export function flushCockpit() {
   if (!dirty) return;
-  try {
-    fs.writeFileSync(COCKPIT_FILE, JSON.stringify({ entries, savedAt: Date.now() }));
-    dirty = false;
-  } catch (e) {
+  dirty = false;
+  saveDoc("mb:cockpit", COCKPIT_FILE, { entries, savedAt: Date.now() }).catch((e) => {
+    dirty = true;
     console.warn("[cockpit] save failed:", e.message);
-  }
+  });
 }
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0; };

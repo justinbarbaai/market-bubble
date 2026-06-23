@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import { loadDoc, saveDoc } from "./store.js";
 
 // ---- "The Floor" — the cross-platform engagement economy ----
 // Viewers earn "Bubbles" just by taking part in the show, on WHATEVER platform
@@ -33,23 +33,18 @@ function minuteOf(ts) {
   return Math.floor(ts / 60000);
 }
 
-export function loadFloor() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(FLOOR_FILE, "utf8"));
-    if (raw && typeof raw === "object" && raw.users) users = raw.users;
-  } catch {
-    /* no saved floor yet */
-  }
+export async function loadFloor() {
+  const raw = await loadDoc("mb:floor", FLOOR_FILE);
+  if (raw && typeof raw === "object" && raw.users) users = raw.users;
 }
 
 export function flushFloor() {
   if (!dirty) return;
-  try {
-    fs.writeFileSync(FLOOR_FILE, JSON.stringify({ users, savedAt: Date.now() }));
-    dirty = false;
-  } catch (e) {
+  dirty = false;
+  saveDoc("mb:floor", FLOOR_FILE, { users, savedAt: Date.now() }).catch((e) => {
+    dirty = true; // retry on the next tick if the save failed
     console.warn("[floor] save failed:", e.message);
-  }
+  });
 }
 
 function rec(key, source, name) {

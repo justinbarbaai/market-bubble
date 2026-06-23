@@ -1,6 +1,6 @@
-import fs from "node:fs";
 import crypto from "node:crypto";
 import { detectPlatform } from "./clips.js";
+import { loadDoc, saveDoc } from "./store.js";
 
 // ---- Connected clip accounts (identity / "prove it's the same person") ----
 // A Market Bubble member (their Twitch/Kick sign-in = mbKey "source:username") can
@@ -36,22 +36,17 @@ export const CONNECTABLE = [...VERIFIABLE, ...MANUAL];
 let links = Object.create(null);
 let dirty = false;
 
-export function loadAccounts() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf8"));
-    if (raw && typeof raw === "object" && raw.links) links = raw.links;
-  } catch {
-    /* none yet */
-  }
+export async function loadAccounts() {
+  const raw = await loadDoc("mb:accounts", ACCOUNTS_FILE);
+  if (raw && typeof raw === "object" && raw.links) links = raw.links;
 }
 export function flushAccounts() {
   if (!dirty) return;
-  try {
-    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify({ links, savedAt: Date.now() }));
-    dirty = false;
-  } catch (e) {
+  dirty = false;
+  saveDoc("mb:accounts", ACCOUNTS_FILE, { links, savedAt: Date.now() }).catch((e) => {
+    dirty = true;
     console.warn("[accounts] save failed:", e.message);
-  }
+  });
 }
 
 const normHandle = (h) => String(h || "").trim().replace(/^@/, "").toLowerCase();

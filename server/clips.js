@@ -1,5 +1,5 @@
-import fs from "node:fs";
 import crypto from "node:crypto";
+import { loadDoc, saveDoc } from "./store.js";
 
 // ---- Clip-to-Earn ----
 // Viewers turn the show into reach: they clip a moment, post it (TikTok / YouTube
@@ -42,22 +42,17 @@ export function detectPlatform(url) {
 let clips = Object.create(null);
 let dirty = false;
 
-export function loadClips() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(CLIPS_FILE, "utf8"));
-    if (raw && typeof raw === "object" && raw.clips) clips = raw.clips;
-  } catch {
-    /* none yet */
-  }
+export async function loadClips() {
+  const raw = await loadDoc("mb:clips", CLIPS_FILE);
+  if (raw && typeof raw === "object" && raw.clips) clips = raw.clips;
 }
 export function flushClips() {
   if (!dirty) return;
-  try {
-    fs.writeFileSync(CLIPS_FILE, JSON.stringify({ clips, savedAt: Date.now() }));
-    dirty = false;
-  } catch (e) {
+  dirty = false;
+  saveDoc("mb:clips", CLIPS_FILE, { clips, savedAt: Date.now() }).catch((e) => {
+    dirty = true;
     console.warn("[clips] save failed:", e.message);
-  }
+  });
 }
 
 // Normalize a URL for dedupe: origin + path + meaningful query, minus trailing

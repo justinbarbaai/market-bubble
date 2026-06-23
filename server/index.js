@@ -259,16 +259,16 @@ function loadState() {
 }
 // The Floor's Bubble balances live in their own file (high write volume during a
 // show), loaded on boot and flushed periodically + on shutdown.
-loadFloor();
+await loadFloor();
 setInterval(() => flushFloor(), 20000).unref?.();
-// Clip-to-Earn submissions persist alongside the Floor (its own file).
-loadClips();
+// Clip-to-Earn submissions persist alongside the Floor.
+await loadClips();
 setInterval(() => flushClips(), 20000).unref?.();
 // Connected clip accounts (identity links) persist too.
-loadAccounts();
+await loadAccounts();
 setInterval(() => flushAccounts(), 20000).unref?.();
 // Distribution cockpit ledger persists too.
-loadCockpit();
+await loadCockpit();
 setInterval(() => flushCockpit(), 20000).unref?.();
 let saveTimer = null;
 function saveState() {

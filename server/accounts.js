@@ -21,12 +21,16 @@ import { detectPlatform } from "./clips.js";
 const ACCOUNTS_FILE = new URL("./.mb-accounts.json", import.meta.url);
 
 // Platforms whose public oEmbed returns author + caption (so we can auto-verify).
-// X / Instagram need the code-in-bio + operator confirm path until their APIs land.
 const OEMBED = {
   tiktok: (url) => `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`,
   youtube: (url) => `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`,
 };
-export const VERIFIABLE = Object.keys(OEMBED);
+export const VERIFIABLE = Object.keys(OEMBED); // auto-verify via oEmbed
+// X + Instagram have no usable public oEmbed → connect the handle, but ownership
+// is confirmed by the operator when they review the clip (the approval queue is
+// the real gate). YouTube also covers Shorts (same domain).
+export const MANUAL = ["x", "instagram"];
+export const CONNECTABLE = [...VERIFIABLE, ...MANUAL];
 
 // mbKey -> { "platform:handle": { platform, handle, code, verified, createdAt, verifiedAt } }
 let links = Object.create(null);
@@ -86,18 +90,25 @@ const keyOf = (platform, handle) => `${platform}:${normHandle(handle)}`;
 export function issueCode(mbKey, platform, handle) {
   const h = normHandle(handle);
   if (!mbKey) return { ok: false, error: "Sign in first." };
-  if (!VERIFIABLE.includes(platform)) return { ok: false, error: "TikTok or YouTube can be auto-verified right now." };
+  if (!CONNECTABLE.includes(platform)) return { ok: false, error: "Unsupported platform." };
   if (!h) return { ok: false, error: "Enter your handle." };
   const k = keyOf(platform, h);
   const mine = (links[mbKey] = links[mbKey] || Object.create(null));
-  // taken by someone else?
+  // taken (verified) by someone else?
   for (const owner in links) {
     if (owner !== mbKey && links[owner][k]?.verified) return { ok: false, error: "That account is already linked to someone else." };
   }
   const existing = mine[k];
-  if (existing?.verified) return { ok: true, code: existing.code, verified: true };
+  if (existing?.verified) return { ok: true, verified: true, manual: !VERIFIABLE.includes(platform) };
+  // X / Instagram: no public oEmbed to read → register the handle; the operator
+  // confirms ownership when reviewing the clip.
+  if (!VERIFIABLE.includes(platform)) {
+    mine[k] = { platform, handle: h, code: null, verified: false, manual: true, createdAt: existing?.createdAt || Date.now(), verifiedAt: null };
+    dirty = true;
+    return { ok: true, manual: true };
+  }
   const code = existing?.code || "MB-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-  mine[k] = { platform, handle: h, code, verified: false, createdAt: existing?.createdAt || Date.now(), verifiedAt: null };
+  mine[k] = { platform, handle: h, code, verified: false, manual: false, createdAt: existing?.createdAt || Date.now(), verifiedAt: null };
   dirty = true;
   return { ok: true, code, verified: false };
 }
@@ -128,7 +139,8 @@ export function accountsFor(mbKey) {
     platform: l.platform,
     handle: l.handle,
     verified: l.verified,
-    code: l.verified ? null : l.code,
+    manual: !!l.manual,
+    code: l.verified || l.manual ? null : l.code,
   }));
 }
 

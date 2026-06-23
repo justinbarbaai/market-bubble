@@ -159,8 +159,8 @@ function ConnectAccounts({
   identity: { source: "twitch" | "kick"; username: string };
   hubHttpUrl: string;
 }) {
-  const [accounts, setAccounts] = useState<{ platform: string; handle: string; verified: boolean; code: string | null }[]>([]);
-  const [platform, setPlatform] = useState<"tiktok" | "youtube">("tiktok");
+  const [accounts, setAccounts] = useState<{ platform: string; handle: string; verified: boolean; manual?: boolean; code: string | null }[]>([]);
+  const [platform, setPlatform] = useState<"tiktok" | "youtube" | "x" | "instagram">("tiktok");
   const [handle, setHandle] = useState("");
   const [pending, setPending] = useState<{ platform: string; handle: string; code: string } | null>(null);
   const [clipUrl, setClipUrl] = useState("");
@@ -195,8 +195,14 @@ function ConnectAccounts({
         body: JSON.stringify({ source: identity.source, username: identity.username, platform, handle: handle.trim() }),
       });
       const j = await r.json();
-      if (j.ok) { setPending({ platform, handle: handle.trim().replace(/^@/, ""), code: j.code }); refresh(); }
-      else setMsg({ ok: false, text: j.error || "Couldn't issue a code." });
+      const h = handle.trim().replace(/^@/, "");
+      if (j.ok && j.manual) {
+        // X / Instagram — registered; confirmed when the operator reviews a clip.
+        setMsg({ ok: true, text: `@${h} added — we'll confirm it when you submit a clip.` });
+        setHandle(""); refresh();
+      } else if (j.ok) {
+        setPending({ platform, handle: h, code: j.code }); refresh();
+      } else setMsg({ ok: false, text: j.error || "Couldn't add that account." });
     } finally { setBusy(false); }
   }
 
@@ -230,6 +236,8 @@ function ConnectAccounts({
               <span className="clip-acc-handle">@{a.handle}</span>
               {a.verified ? (
                 <span className="clip-acc-status ok">verified ✓</span>
+              ) : a.manual ? (
+                <span className="clip-acc-status pending">added · review on submit</span>
               ) : (
                 <span className="clip-acc-status pending">pending · code <b>{a.code}</b></span>
               )}
@@ -240,12 +248,16 @@ function ConnectAccounts({
 
       {!pending ? (
         <form className="clip-acc-connect" onSubmit={getCode}>
-          <select className="clip-acc-select" value={platform} onChange={(e) => setPlatform(e.target.value as "tiktok" | "youtube")} aria-label="Platform">
+          <select className="clip-acc-select" value={platform} onChange={(e) => setPlatform(e.target.value as "tiktok" | "youtube" | "x" | "instagram")} aria-label="Platform">
             <option value="tiktok">TikTok</option>
-            <option value="youtube">YouTube</option>
+            <option value="youtube">YouTube / Shorts</option>
+            <option value="x">X</option>
+            <option value="instagram">Instagram</option>
           </select>
           <input className="clip-input" placeholder="your @handle" value={handle} onChange={(e) => setHandle(e.target.value)} aria-label="Your handle" />
-          <button className="clip-submit-btn ghost" type="submit" disabled={busy || !handle.trim()}>Get code</button>
+          <button className="clip-submit-btn ghost" type="submit" disabled={busy || !handle.trim()}>
+            {platform === "x" || platform === "instagram" ? "Add" : "Get code"}
+          </button>
         </form>
       ) : (
         <form className="clip-acc-verify" onSubmit={verify}>

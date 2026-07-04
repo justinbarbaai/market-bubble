@@ -29,6 +29,8 @@ export interface MemberCard {
   socials?: Partial<
     Record<"x" | "tiktok" | "instagram" | "discord" | "website", { handle?: string; url?: string }>
   > | null;
+  // Giveaway addresses (receive-only) the member chose to display publicly.
+  wallets?: Partial<Record<"sol" | "eth" | "btc", string>> | null;
 }
 
 export interface Profile {

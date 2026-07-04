@@ -1162,28 +1162,26 @@ code {
   overflow-wrap: anywhere;
   cursor: pointer; /* names are tappable → profile card */
 }
-/* hover a viewer → a rich profile card (avatar, handle, badges, stats) */
+/* click/hover a viewer → their member card. Printed paper, not app glass:
+   theme paper stock, hairline ink rules, serif masthead — the site's voice. */
 .cf-card {
   --src: #888;
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
   z-index: 30;
-  width: 248px;
+  width: 252px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 14px;
+  gap: 9px;
+  padding: 13px 14px 12px;
+  border-radius: 6px;
   white-space: normal;
   text-align: left;
   color: var(--text);
-  background: linear-gradient(180deg, rgba(22, 26, 36, 0.98), rgba(12, 15, 22, 0.98));
-  border: 1px solid color-mix(in srgb, var(--src) 45%, rgba(255, 255, 255, 0.12));
-  box-shadow: 0 20px 44px -18px rgba(0, 0, 0, 0.9),
-    0 0 22px -8px color-mix(in srgb, var(--src) 60%, transparent);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  background: color-mix(in srgb, var(--text) 3%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--text) 24%, transparent);
+  box-shadow: 0 18px 40px -16px rgba(20, 12, 4, 0.55);
   opacity: 0;
   transform: translateY(6px) scale(0.97);
   transform-origin: bottom left;
@@ -1191,15 +1189,15 @@ code {
   transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .cf-card[data-source="x"] {
-  --src: #fff;
+  --src: var(--text);
 }
-/* a colored rim strip at the top, like the platform OAuth cards */
+/* the platform's color as a slim press rule across the top */
 .cf-card::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
   height: 3px;
-  border-radius: 14px 14px 0 0;
+  border-radius: 6px 6px 0 0;
   background: var(--src);
 }
 .cf-card-head {
@@ -1214,7 +1212,7 @@ code {
   transition: background 0.14s ease;
 }
 a.cf-card-head:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 .cf-card-avatar {
   width: 38px;
@@ -1222,7 +1220,7 @@ a.cf-card-head:hover {
   border-radius: 50%;
   flex-shrink: 0;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
 }
 .cf-card-avatar-fallback {
   display: grid;
@@ -1257,16 +1255,21 @@ a.cf-card-head:hover {
   flex: 1;
 }
 .cf-card-name {
-  font-size: 14px;
-  font-weight: 800;
-  color: #fff;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.1px;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .cf-card-handle {
-  font-size: 11px;
+  font-family: var(--mono);
+  font-size: 9.5px;
   font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1278,80 +1281,53 @@ a.cf-card-head:hover {
   align-items: center;
   gap: 4px;
 }
-.cf-card-stats {
-  display: flex;
-  gap: 14px;
-  padding-top: 9px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-.cf-card-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.cf-card-stat b {
-  font-size: 14px;
-  font-weight: 800;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
-}
-.cf-card-stat span {
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.cf-card-foot {
-  font-size: 11px;
-  color: var(--muted);
-}
-/* Member layer on the chat card — Floor standing + clips + socials */
-.cf-card-member {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 9px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-.cf-card-mb-row {
+/* The Floor line — the member's standing, under a newspaper double rule */
+.cf-card-floor {
   display: flex;
   align-items: baseline;
-  gap: 7px;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 3px double color-mix(in srgb, var(--text) 38%, transparent);
 }
-.cf-card-mb-rank {
-  font-family: var(--mono);
-  font-size: 11px;
+.cf-card-floor-rank {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--src, #fff);
+  color: var(--text);
 }
-.cf-card-mb-pts {
+.cf-card-floor-label {
   font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 800;
-  color: #7dd8a0;
-  font-variant-numeric: tabular-nums;
-}
-.cf-card-mb-label {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--muted);
 }
-.cf-card-mb-days {
+.cf-card-floor-pts {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--up);
+  font-variant-numeric: tabular-nums;
 }
-.cf-card-mb-clips {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.75);
+.cf-card-clipline {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--text) 78%, transparent);
 }
-.cf-card-mb-clips b {
-  color: #ffd166;
+.cf-card-clipline b {
+  color: var(--text);
   font-weight: 700;
+}
+.cf-card-session {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  color: var(--muted);
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
 }
 .cf-card-socials {
   display: flex;
@@ -1362,29 +1338,41 @@ a.cf-card-head:hover {
   font-family: var(--mono);
   font-size: 10px;
   line-height: 1.5;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid color-mix(in srgb, var(--text) 26%, transparent);
+  background: none;
+  color: var(--text);
   text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
 }
-a.cf-card-social:hover {
-  border-color: rgba(255, 255, 255, 0.5);
-  color: #fff;
+a.cf-card-social:hover,
+button.cf-card-social:hover {
+  border-color: var(--text);
+}
+.cf-card-social.wallet {
+  color: var(--up);
+  border-color: color-mix(in srgb, var(--up) 45%, transparent);
+}
+.cf-card-foot {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--muted);
 }
 .cf-card-mod {
   display: flex;
   gap: 6px;
-  padding-top: 9px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
 }
 .cf-card-mod button {
   flex: 1;
   padding: 6px 0;
-  border-radius: 8px;
-  border: 1px solid var(--border-2);
-  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text) 24%, transparent);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
   color: var(--text);
   font-size: 11.5px;
   font-weight: 700;
@@ -1392,14 +1380,21 @@ a.cf-card-social:hover {
   transition: background 0.14s ease, border-color 0.14s ease;
 }
 .cf-card-mod button:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--text) 11%, transparent);
 }
 .cf-card-mod-ban {
-  color: #ff6b6b !important;
-  border-color: rgba(255, 80, 80, 0.4) !important;
+  color: var(--down) !important;
+  border-color: color-mix(in srgb, var(--down) 45%, transparent) !important;
 }
 .cf-card-mod-ban:hover {
-  background: rgba(255, 70, 70, 0.16) !important;
+  background: color-mix(in srgb, var(--down) 14%, transparent) !important;
+}
+/* flipped: opens under the name when the row is too close to the feed's top */
+.cf-card.below {
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top left;
 }
 .cf-userwrap:hover .cf-card,
 .cf-userwrap.cardopen .cf-card {

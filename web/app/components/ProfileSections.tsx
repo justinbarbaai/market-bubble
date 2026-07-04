@@ -256,7 +256,7 @@ export function ProfilePanel({
               </label>
             ))}
           </div>
-          <p className="prof-note">Public receive addresses only — we never ask you to connect a wallet or sign anything.</p>
+          <p className="prof-note">Shown on your public profile card so the show can send giveaways. Receive addresses only — we never ask you to connect a wallet or sign anything.</p>
         </div>
 
         <div className="prof-group">

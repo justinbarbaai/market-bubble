@@ -126,12 +126,20 @@ export function getProfile(mbKey) {
   return profiles[mbKey] ? publicProfile(profiles[mbKey]) : null;
 }
 
-// Socials ONLY — for the public member card in chat. Wallet addresses are payout
-// info and stay operator-only (the Roster); they must never ride a public reply.
+// Socials for the public member card in chat.
 export function publicSocials(mbKey) {
   const pp = getProfile(mbKey);
   if (!pp || Object.keys(pp.socials).length === 0) return null;
   return pp.socials;
+}
+
+// Giveaway addresses for the public card too — receive-only addresses the member
+// added precisely so the show (and the room) can see where to send winnings.
+// Like putting your SOL address in your bio: public by intent, can't move funds.
+export function publicWallets(mbKey) {
+  const pp = getProfile(mbKey);
+  if (!pp || Object.keys(pp.wallets).length === 0) return null;
+  return pp.wallets;
 }
 
 // Whether a profile has anything worth showing an operator.

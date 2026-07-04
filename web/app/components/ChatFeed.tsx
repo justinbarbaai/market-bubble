@@ -179,8 +179,10 @@ export function ChatFeed({
   const [paused, setPaused] = useState(false);
 
   // Click a name → the profile card pins open (tap-friendly; hover still works
-  // on desktop). One card at a time; click-away or Esc closes it.
-  const [openCard, setOpenCard] = useState<string | null>(null);
+  // on desktop). One card at a time; click-away or Esc closes it. `below` flips
+  // the card under the name when the row sits too close to the feed's top for
+  // the card to fit above (it would get clipped by the scrollport otherwise).
+  const [openCard, setOpenCard] = useState<{ id: string; below: boolean } | null>(null);
   useEffect(() => {
     if (!openCard) return;
     const onDoc = (e: MouseEvent) => {
@@ -300,10 +302,25 @@ export function ChatFeed({
                 first={firstIdsRef.current.get(key) === m.id}
                 onHoverUser={onHoverUser}
                 moderation={moderation}
-                cardOpen={openCard === m.id}
+                cardOpen={openCard?.id === m.id}
+                cardBelow={openCard?.id === m.id ? openCard.below : false}
                 onToggleCard={() => {
                   onHoverUser?.(m.source, m.username); // make sure the profile is requested on tap
-                  setOpenCard((prev) => (prev === m.id ? null : m.id));
+                  setOpenCard((prev) => {
+                    if (prev?.id === m.id) return null;
+                    // open toward whichever side of the row has more room in the
+                    // feed, so the card never clips against the scrollport edge
+                    const feed = feedRef.current;
+                    const row = feed?.querySelector<HTMLElement>(`.cf-row[data-mid="${CSS.escape(m.id)}"]`);
+                    let below = false;
+                    if (feed && row) {
+                      const fr = feed.getBoundingClientRect();
+                      const rr = row.getBoundingClientRect();
+                      const above = rr.top - fr.top;
+                      below = above < 360 && fr.bottom - rr.bottom > above;
+                    }
+                    return { id: m.id, below };
+                  });
                 }}
               />
             );
@@ -332,6 +349,7 @@ function Row({
   onHoverUser,
   moderation,
   cardOpen,
+  cardBelow,
   onToggleCard,
 }: {
   m: ChatMessage;
@@ -348,12 +366,42 @@ function Row({
   moderation?: Moderation;
   /** the profile card is pinned open (clicked/tapped name) */
   cardOpen?: boolean;
+  /** open the card below the name (row too close to the feed top) */
+  cardBelow?: boolean;
   onToggleCard?: () => void;
 }) {
   const displayName = profile?.displayName || m.username;
   const since = profile?.createdAt ? new Date(profile.createdAt).getFullYear() : null;
   const url = profileUrl(m.source, m.username, profile);
   const avatar = avatarUrl(m.source, m.username, profile);
+  // "copied ✓" feedback for the giveaway-address chips on the card
+  const [copiedChain, setCopiedChain] = useState("");
+
+  // Pinned-open cards must never clip against the feed's scrollport — the room
+  // panel can be SHORTER than the card. Once open (and again when the member
+  // data arrives and the card grows), measure and shift it so it fits, sliding
+  // over the row like a normal popover if it has to.
+  const cardRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    if (!cardOpen) { card.style.transform = ""; return; }
+    const feed = card.closest(".cf-feed");
+    const row = card.closest(".cf-row");
+    if (!feed || !row) return;
+    // Derive the card's natural anchored position from the row (untransformed)
+    // + the card's layout height — rects mid reveal-animation would lie.
+    const fr = feed.getBoundingClientRect();
+    const rr = row.getBoundingClientRect();
+    const h = card.offsetHeight;
+    const isBelow = card.classList.contains("below");
+    const top = isBelow ? rr.bottom + 8 : rr.top - 8 - h;
+    const bottom = top + h;
+    let shift = 0;
+    if (top < fr.top + 6) shift = fr.top + 6 - top; // poking out the top → push down
+    else if (bottom > fr.bottom - 6) shift = fr.bottom - 6 - bottom; // out the bottom → pull up
+    card.style.transform = `translateY(${Math.round(shift)}px)`;
+  }, [cardOpen, profile]);
 
   return (
     <div
@@ -447,7 +495,7 @@ function Row({
           >
             {m.username}
           </span>
-          <span className="cf-card" data-source={m.source} style={{ ["--src" as any]: m.color }}>
+          <span ref={cardRef} className={`cf-card${cardBelow ? " below" : ""}`} data-source={m.source} style={{ ["--src" as any]: m.color }}>
             <a
               className="cf-card-head"
               href={url ?? undefined}
@@ -483,63 +531,60 @@ function Row({
               </span>
             )}
 
-            <span className="cf-card-stats">
-              <span className="cf-card-stat">
-                <b>{stat?.count ?? 1}</b>
-                <span>msg{(stat?.count ?? 1) === 1 ? "" : "s"} this session</span>
+            {/* The Floor — their standing on the show, front and center. */}
+            {profile?.member?.points != null && (
+              <span className="cf-card-floor">
+                <span className="cf-card-floor-rank">Nº {profile.member.rank}</span>
+                <span className="cf-card-floor-label">The Floor</span>
+                <span className="cf-card-floor-pts">{profile.member.points.toLocaleString("en-US")} ◆</span>
               </span>
-              {since && (
-                <span className="cf-card-stat">
-                  <b>{since}</b>
-                  <span>on {SOURCE_LABELS[m.source]} since</span>
-                </span>
-              )}
-              {stat && (
-                <span className="cf-card-stat">
-                  <b>{fmtTime(stat.first)}</b>
-                  <span>first seen</span>
-                </span>
-              )}
+            )}
+            {profile?.member?.clips && (
+              <span className="cf-card-clipline">
+                {profile.member.clips.approved} clip{profile.member.clips.approved === 1 ? "" : "s"} ·{" "}
+                {profile.member.clips.views.toLocaleString("en-US")} views
+                {profile.member.clips.featured > 0 && <b> · ★ featured</b>}
+              </span>
+            )}
+
+            {/* Everything session/tenure folds into one quiet line. */}
+            <span className="cf-card-session">
+              {stat?.count ?? 1} msg{(stat?.count ?? 1) === 1 ? "" : "s"} this session
+              {since ? ` · on ${SOURCE_LABELS[m.source]} since ${since}` : ""}
             </span>
 
-            {/* Market Bubble member layer — their standing on the show, like a
-                social-platform profile. Only renders once they've earned/set
-                something (fresh chatters keep the plain platform card). */}
-            {profile?.member && (
-              <span className="cf-card-member">
-                {profile.member.points != null && (
-                  <span className="cf-card-mb-row">
-                    <span className="cf-card-mb-rank">#{profile.member.rank}</span>
-                    <span className="cf-card-mb-pts">{profile.member.points.toLocaleString("en-US")} ◆</span>
-                    <span className="cf-card-mb-label">on The Floor</span>
-                    {(profile.member.days ?? 0) > 1 && (
-                      <span className="cf-card-mb-days">{profile.member.days} shows</span>
-                    )}
-                  </span>
-                )}
-                {profile.member.clips && (
-                  <span className="cf-card-mb-clips">
-                    {profile.member.clips.approved} clip{profile.member.clips.approved === 1 ? "" : "s"} ·{" "}
-                    {profile.member.clips.views.toLocaleString("en-US")} views
-                    {profile.member.clips.featured > 0 && <b> · ★ featured on the show</b>}
-                  </span>
-                )}
-                {profile.member.socials && (
-                  <span className="cf-card-socials">
-                    {Object.entries(profile.member.socials).map(([net, v]) =>
-                      v?.url ? (
-                        <a key={net} className="cf-card-social" href={v.url} target="_blank" rel="noreferrer noopener">
-                          {net === "x" ? "𝕏" : net === "website" ? "site" : net}
-                          {v.handle ? ` @${v.handle}` : ""}
-                        </a>
-                      ) : v?.handle ? (
-                        <span key={net} className="cf-card-social" title={`${net}: ${v.handle}`}>
-                          {net} {v.handle}
-                        </span>
-                      ) : null
-                    )}
-                  </span>
-                )}
+            {(profile?.member?.socials || profile?.member?.wallets) && (
+              <span className="cf-card-socials">
+                {profile.member.socials &&
+                  Object.entries(profile.member.socials).map(([net, v]) =>
+                    v?.url ? (
+                      <a key={net} className="cf-card-social" href={v.url} target="_blank" rel="noreferrer noopener">
+                        {net === "x" ? "𝕏" : net === "website" ? "site" : net}
+                        {v.handle ? ` ${v.handle}` : ""}
+                      </a>
+                    ) : v?.handle ? (
+                      <span key={net} className="cf-card-social" title={`${net}: ${v.handle}`}>
+                        {net} {v.handle}
+                      </span>
+                    ) : null
+                  )}
+                {profile.member.wallets &&
+                  Object.entries(profile.member.wallets).map(([chain, addr]) => (
+                    <button
+                      key={chain}
+                      type="button"
+                      className="cf-card-social wallet"
+                      title={`Copy ${chain.toUpperCase()} address`}
+                      onClick={() => {
+                        navigator.clipboard?.writeText(addr as string).catch(() => {});
+                        setCopiedChain(chain);
+                        setTimeout(() => setCopiedChain(""), 1400);
+                      }}
+                    >
+                      {chain.toUpperCase()}{" "}
+                      {copiedChain === chain ? "copied ✓" : `${(addr as string).slice(0, 4)}…${(addr as string).slice(-4)} ⧉`}
+                    </button>
+                  ))}
               </span>
             )}
             {channel && channel !== SOURCE_LABELS[m.source] && (

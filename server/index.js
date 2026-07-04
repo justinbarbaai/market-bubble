@@ -17,7 +17,7 @@ import { loadFloor, flushFloor, recordMessage, recordVote, floorPayload, awardBu
 import { loadClips, flushClips, submitClip, decideClip, featureClip, clipsPayload, setAttribution, clipStatsFor } from "./clips.js";
 import { loadAccounts, flushAccounts, issueCode, verifyAccount, accountsFor, oembed, isVerifiedHandle, VERIFIABLE } from "./accounts.js";
 import { loadCockpit, flushCockpit, addEntry, addEntries, addSnapshot, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
-import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials } from "./profiles.js";
+import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials, publicWallets } from "./profiles.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -1245,16 +1245,17 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Public: a member's card (Floor standing + clip record + socials — the same
-    // shape the chat hover-card gets over WS; never wallets). Powers /profile.
+    // shape the chat hover-card gets over WS, incl. giveaway addresses). Powers /profile.
     if (url.pathname === "/member") {
       const mbKey = mbKeyOf(url.searchParams.get("source"), url.searchParams.get("username"));
       if (!mbKey) return json(200, { ok: true, member: null });
       const stats = memberStats(mbKey);
       const clipRec = clipStatsFor(mbKey);
       const socials = publicSocials(mbKey);
+      const wallets = publicWallets(mbKey);
       return json(200, {
         ok: true,
-        member: stats || clipRec || socials ? { ...(stats || {}), clips: clipRec, socials } : null,
+        member: stats || clipRec || socials || wallets ? { ...(stats || {}), clips: clipRec, socials, wallets } : null,
       });
     }
 
@@ -1441,12 +1442,13 @@ wss.on("connection", (ws, req) => {
       const source = msg.source;
       if (!name) return;
       // The Market Bubble member layer: Floor standing + approved clip record +
-      // public social links (never wallets — those are operator-only).
+      // public social links + giveaway addresses (receive-only, public by intent).
       const mbKey = `${source}:${name.toLowerCase()}`;
       const stats = memberStats(mbKey);
       const clipRec = clipStatsFor(mbKey);
       const socials = publicSocials(mbKey);
-      const member = stats || clipRec || socials ? { ...(stats || {}), clips: clipRec, socials } : null;
+      const wallets = publicWallets(mbKey);
+      const member = stats || clipRec || socials || wallets ? { ...(stats || {}), clips: clipRec, socials, wallets } : null;
       fetchProfile(source, name, twitchCreds)
         .then((data) => {
           if (ws.readyState === ws.OPEN) {

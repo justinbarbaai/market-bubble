@@ -1217,7 +1217,7 @@ const server = http.createServer(async (req, res) => {
   // ---- Member profiles: crypto giveaway addresses + social links ----
   // Viewer reads/writes their own (identity by claimed source:username, same trust
   // model as clips/accounts). The Roster (operator-only) reads everyone's.
-  if (url.pathname === "/profile" || url.pathname === "/roster") {
+  if (url.pathname === "/profile" || url.pathname === "/roster" || url.pathname === "/member") {
     const cors = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -1242,6 +1242,20 @@ const server = http.createServer(async (req, res) => {
         })
         .sort((a, b) => b.points - a.points);
       return json(200, { roster, count: roster.length });
+    }
+
+    // Public: a member's card (Floor standing + clip record + socials — the same
+    // shape the chat hover-card gets over WS; never wallets). Powers /profile.
+    if (url.pathname === "/member") {
+      const mbKey = mbKeyOf(url.searchParams.get("source"), url.searchParams.get("username"));
+      if (!mbKey) return json(200, { ok: true, member: null });
+      const stats = memberStats(mbKey);
+      const clipRec = clipStatsFor(mbKey);
+      const socials = publicSocials(mbKey);
+      return json(200, {
+        ok: true,
+        member: stats || clipRec || socials ? { ...(stats || {}), clips: clipRec, socials } : null,
+      });
     }
 
     // Viewer: read own profile (for prefill).

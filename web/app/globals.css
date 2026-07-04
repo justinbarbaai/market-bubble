@@ -9142,6 +9142,35 @@ body.panel-dragging iframe {
 .prof-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
 .prof-actions .clip-msg { margin: 0; }
 
+/* Your profile page (/profile — opened from the header pfp) */
+.profpage { display: flex; flex-direction: column; gap: 14px; }
+.profpage-hero {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 16px; border: 1px solid var(--border-2); border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+}
+.profpage-av {
+  position: relative; width: 56px; height: 56px; border-radius: 50%;
+  overflow: hidden; flex: 0 0 auto; background: color-mix(in srgb, var(--text) 12%, transparent);
+  display: grid; place-items: center;
+}
+.profpage-av b { font-family: var(--serif); font-size: 24px; color: var(--text); }
+.profpage-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.profpage-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.profpage-name { font-family: var(--serif); font-size: 22px; font-weight: 700; line-height: 1.1; }
+.profpage-handle { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.profpage-stats { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+.profpage-stat { display: flex; flex-direction: column; gap: 1px; }
+.profpage-stat b { font-family: var(--mono); font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.profpage-stat:first-child b { color: var(--up); }
+.profpage-stat span { font-size: 9.5px; font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; color: var(--muted); }
+.profpage-note { margin: 0; font-size: 12px; color: var(--muted); }
+.profpage-connect { margin-left: auto; }
+.profpage .clip-accounts, .profpage .clip-prof { margin-top: 0; }
+@media (max-width: 640px) {
+  .profpage-stats { margin-left: 0; width: 100%; gap: 14px; }
+}
+
 /* Roster (Studio Engage) — payout + socials, operator-only */
 .roster { display: flex; flex-direction: column; gap: 8px; }
 .roster-row { padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 9px; }

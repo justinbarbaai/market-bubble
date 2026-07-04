@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { SourceLogo } from "./logos";
 import type { TwitchAuth } from "../lib/twitchAuth";
 import { useKickSession } from "../lib/kickAuth";
@@ -30,6 +31,7 @@ export function LoginMenu({
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const { session: kick, signIn: kickSignIn, signOut: kickSignOut } = useKickSession();
+  const router = useRouter();
 
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect();
@@ -37,6 +39,13 @@ export function LoginMenu({
   };
 
   const toggle = () => {
+    // Signed in → the pfp opens YOUR PROFILE (public card + connect everything).
+    // The sign-in dropdown is only for logged-out visitors; sign-out moved to
+    // the profile page's "Chat identities".
+    if (auth || kick) {
+      router.push("/profile");
+      return;
+    }
     if (!open) place();
     setOpen((o) => !o);
   };

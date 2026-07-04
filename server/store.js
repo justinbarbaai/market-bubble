@@ -1,14 +1,30 @@
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ---- Durable key/value store ----
-// Render's filesystem is EPHEMERAL — it's wiped on every deploy / restart / idle
-// spin-down, so the hub's JSON files (Bubbles, clips, accounts, cockpit) reset.
-// This layer saves to Upstash Redis (free, durable, HTTP REST) when configured,
-// and falls back to a local file for dev. Set in the hub env:
-//   UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+// Render's DEFAULT filesystem is EPHEMERAL — wiped on every deploy / restart /
+// idle spin-down, so the hub's JSON files (Bubbles, clips, accounts, cockpit)
+// reset. Two ways to be durable, either works:
+//   • STATE_DIR=/data — a Render persistent disk mounted there (paid instance).
+//     Files land on the disk and survive deploys. Simplest, no external deps.
+//   • UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN — Upstash Redis REST.
+// With neither, files sit next to the code (fine for local dev only).
 const REST_URL = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/+$/, "");
 const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
-export const DURABLE = !!(REST_URL && REST_TOKEN);
+const STATE_DIR = (process.env.STATE_DIR || "").trim();
+if (STATE_DIR) {
+  try { fs.mkdirSync(STATE_DIR, { recursive: true }); } catch {}
+}
+export const DURABLE = !!(REST_URL && REST_TOKEN) || !!STATE_DIR;
+
+// Modules pass their default file location (a URL beside the code); when
+// STATE_DIR is set we redirect the SAME basename onto the persistent disk.
+function resolveFile(file) {
+  if (!STATE_DIR) return file;
+  const p = typeof file === "string" ? file : fileURLToPath(file);
+  return path.join(STATE_DIR, path.basename(p));
+}
 
 const TIMEOUT = 8000;
 
@@ -26,6 +42,7 @@ const health = {
 export function storeHealth() {
   return {
     durable: DURABLE,
+    mode: REST_URL && REST_TOKEN ? "redis" : STATE_DIR ? "disk" : "none",
     // ok=false means Redis is configured but its last operation FAILED —
     // writes are landing on the ephemeral disk and will die with the dyno.
     ok: DURABLE ? health.fails === 0 : null,
@@ -69,10 +86,12 @@ async function redisSet(key, value) {
   if (!r.ok) throw new Error(`set ${r.status}`);
 }
 
-// Load a JSON doc by key. Tries Redis (if configured), falls back to the local
-// file. Returns the parsed object, or null if absent/unreadable.
+const REDIS = !!(REST_URL && REST_TOKEN);
+
+// Load a JSON doc by key. Tries Redis (if configured), falls back to the file —
+// which lives on the persistent disk when STATE_DIR is set.
 export async function loadDoc(key, file) {
-  if (DURABLE) {
+  if (REDIS) {
     try {
       const s = await redisGet(key);
       markOk();
@@ -83,20 +102,18 @@ export async function loadDoc(key, file) {
     }
   }
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
+    return JSON.parse(fs.readFileSync(resolveFile(file), "utf8"));
   } catch {
     return null;
   }
 }
 
-// Save a JSON doc. Writes to Redis when configured (durable), else the local
-// file. Returns a promise; callers may fire-and-forget on a timer.
-// Even when Redis is configured, the file is ALSO written on failure so a
-// restart-without-deploy at least keeps recent state — but that path is a
-// degraded mode, and storeHealth() reports it.
+// Save a JSON doc. Redis when configured; otherwise (or on Redis failure) the
+// file — durable if it's on the STATE_DIR disk, ephemeral scratch if not.
+// A failed write to the persistent disk is a durability incident too.
 export async function saveDoc(key, file, obj) {
   const s = JSON.stringify(obj);
-  if (DURABLE) {
+  if (REDIS) {
     try {
       await redisSet(key, s);
       markOk();
@@ -106,8 +123,10 @@ export async function saveDoc(key, file, obj) {
     }
   }
   try {
-    fs.writeFileSync(file, s);
+    fs.writeFileSync(resolveFile(file), s);
+    if (!REDIS && STATE_DIR) markOk();
   } catch (e) {
-    console.warn(`[store] file save ${key} failed: ${e.message}`);
+    if (STATE_DIR) markFail("save-file", key, e);
+    else console.warn(`[store] file save ${key} failed: ${e.message}`);
   }
 }

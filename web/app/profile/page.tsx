@@ -6,7 +6,7 @@ import { SourceLogo } from "../components/logos";
 import { ConnectAccounts, ProfilePanel } from "../components/ProfileSections";
 import { useHub } from "../lib/useHub";
 import type { MemberCard } from "../lib/useHub";
-import { getAuth, clearAuth, startLogin } from "../lib/twitchAuth";
+import { getAuth, clearAuth, startLogin, fetchTwitchAvatar } from "../lib/twitchAuth";
 import { useKickSession } from "../lib/kickAuth";
 
 // Your profile — opened from the pfp in the header. Shows the member card the
@@ -44,8 +44,17 @@ export default function ProfilePage() {
   }, [hubHttpUrl, identity?.source, identity?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadMember(); }, [loadMember]);
 
+  // The real Twitch pfp via Helix (their own token); unavatar only as fallback.
+  const [twAvatar, setTwAvatar] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    const a = getAuth();
+    if (a?.login) fetchTwitchAvatar(a).then((u) => { if (live) setTwAvatar(u); });
+    return () => { live = false; };
+  }, [twitch]);
   const avatar = identity
-    ? `https://unavatar.io/${identity.source === "twitch" ? "twitch" : "kick"}/${encodeURIComponent(identity.username)}`
+    ? (identity.source === "twitch" && twAvatar) ||
+      `https://unavatar.io/${identity.source === "twitch" ? "twitch" : "kick"}/${encodeURIComponent(identity.username)}`
     : "";
 
   return (

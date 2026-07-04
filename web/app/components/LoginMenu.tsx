@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { SourceLogo } from "./logos";
-import type { TwitchAuth } from "../lib/twitchAuth";
+import { fetchTwitchAvatar, type TwitchAuth } from "../lib/twitchAuth";
 import { useKickSession } from "../lib/kickAuth";
 
 type Props = {
@@ -74,10 +74,18 @@ export function LoginMenu({
   };
 
   // When signed in, show the profile photo in a circle instead of "@handle".
-  // Prefer the Twitch pfp; fall back to Kick if only Kick is connected.
+  // Twitch: the account's REAL pfp from Helix (their own token) — unavatar is
+  // only the interim fallback while it loads. Kick: unavatar (no public API).
   const signedIn = !!auth || !!kick;
+  const [twAvatar, setTwAvatar] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (auth) fetchTwitchAvatar(auth).then((u) => { if (live) setTwAvatar(u); });
+    else setTwAvatar(null);
+    return () => { live = false; };
+  }, [auth]);
   const avatarUrl = auth
-    ? `https://unavatar.io/twitch/${auth.login}`
+    ? twAvatar || `https://unavatar.io/twitch/${auth.login}`
     : kick?.username
     ? `https://unavatar.io/kick/${kick.username}`
     : "";

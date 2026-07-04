@@ -46,6 +46,31 @@ export function getAuth(): TwitchAuth | null {
 
 export function clearAuth() {
   localStorage.removeItem(LS_AUTH);
+  localStorage.removeItem(LS_AVATAR);
+}
+
+// The connected account's REAL Twitch profile picture, from Helix with the
+// user's own token (unavatar is a third-party guesser and often misses).
+// Cached for a day; falls back to null so callers can keep their placeholder.
+const LS_AVATAR = "mb_twitch_avatar"; // { login, url, at }
+export async function fetchTwitchAvatar(auth: TwitchAuth): Promise<string | null> {
+  if (typeof window === "undefined" || !auth?.token) return null;
+  try {
+    const c = JSON.parse(localStorage.getItem(LS_AVATAR) || "null");
+    if (c?.login === auth.login && c.url && Date.now() - c.at < 24 * 3600e3) return c.url;
+  } catch {}
+  try {
+    const r = await fetch("https://api.twitch.tv/helix/users", {
+      headers: { "Client-ID": getClientId(), Authorization: `Bearer ${auth.token}` },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const url: string | null = j?.data?.[0]?.profile_image_url || null;
+    if (url) localStorage.setItem(LS_AVATAR, JSON.stringify({ login: auth.login, url, at: Date.now() }));
+    return url;
+  } catch {
+    return null;
+  }
 }
 
 // Always returns to the public home (one canonical redirect URI to register in

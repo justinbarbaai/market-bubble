@@ -7,7 +7,7 @@ import { BootSequence } from "./BootSequence";
 
 // Routes that must stay bare — OBS browser sources / embeds. No grain, no boot,
 // no FX (those would paint a non-transparent layer over the chat overlay).
-const BARE = ["/overlay", "/reader"];
+const BARE = ["/overlay"];
 
 /**
  * Site-wide FX, mounted once in the root layout. Kept intentionally minimal —

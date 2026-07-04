@@ -257,6 +257,7 @@ function ControlPanel() {
         <>
           <PollControl hubHttpUrl={hubHttpUrl} poll={poll} />
           <ClipQueue hubHttpUrl={hubHttpUrl} />
+          <Roster hubHttpUrl={hubHttpUrl} />
         </>
       )}
 
@@ -1201,6 +1202,90 @@ function ClipQueue({ hubHttpUrl }: { hubHttpUrl: string }) {
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+// Roster — the top fans + clippers who added payout/social info, ranked by
+// Bubbles. Banks & Ansem use this to send crypto giveaway winnings and find/tag
+// people. Operator-only (crypto addresses aren't shown to the public).
+type RosterProfile = {
+  wallets: Partial<Record<"sol" | "eth" | "btc", string>>;
+  socials: Partial<Record<"x" | "tiktok" | "instagram" | "discord" | "website", { handle?: string; url?: string }>>;
+};
+type RosterRow = { key: string; source: string; name: string; points: number; profile: RosterProfile };
+
+const WALLET_LABEL: Record<string, string> = { sol: "SOL", eth: "ETH", btc: "BTC" };
+const SOCIAL_LABEL: Record<string, string> = { x: "X", tiktok: "TikTok", instagram: "IG", discord: "Discord", website: "Site" };
+
+function Roster({ hubHttpUrl }: { hubHttpUrl: string }) {
+  const [opKey, setOpKey] = useState("");
+  const [rows, setRows] = useState<RosterRow[]>([]);
+  const [copied, setCopied] = useState("");
+
+  useEffect(() => { try { setOpKey(localStorage.getItem("mb.operatorKey") || ""); } catch {} }, []);
+
+  const load = useCallback(async () => {
+    if (!opKey) return;
+    try {
+      const r = await fetch(`${hubHttpUrl}/roster?key=${encodeURIComponent(opKey)}`, { cache: "no-store" });
+      const j = await r.json();
+      setRows(j.roster || []);
+    } catch {}
+  }, [hubHttpUrl, opKey]);
+
+  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
+
+  const copy = (id: string, text: string) => {
+    navigator.clipboard?.writeText(text).then(() => { setCopied(id); setTimeout(() => setCopied(""), 1400); }).catch(() => {});
+  };
+
+  return (
+    <section className="pollctl">
+      <div className="pollctl-head">
+        <b>Roster · payouts &amp; socials</b>
+        <span className="muted small">who to pay for giveaways/bounties + find them on socials · ranked by Bubbles</span>
+      </div>
+
+      {!opKey && <p className="muted small pollctl-note">Set your operator key in the X Capture tab first.</p>}
+      {opKey && rows.length === 0 && <p className="muted small">No one's added payout info yet.</p>}
+
+      <div className="roster">
+        {rows.map((r, i) => {
+          const wallets = Object.entries(r.profile.wallets || {});
+          const socials = Object.entries(r.profile.socials || {});
+          return (
+            <div key={r.key} className="roster-row">
+              <div className="roster-who">
+                <span className="roster-rank">{String(i + 1).padStart(2, "0")}</span>
+                <span className="roster-name">{r.name}</span>
+                <span className={`clip-badge plat-${r.source}`}>{r.source}</span>
+                <span className="roster-pts">{r.points.toLocaleString()} ◆</span>
+              </div>
+              {(wallets.length > 0 || socials.length > 0) && (
+                <div className="roster-links">
+                  {socials.map(([net, v]) => (
+                    v?.url ? (
+                      <a key={net} className="roster-chip social" href={v.url} target="_blank" rel="noreferrer noopener">
+                        {SOCIAL_LABEL[net] ?? net}{v.handle ? ` @${v.handle}` : ""}
+                      </a>
+                    ) : v?.handle ? (
+                      <button key={net} type="button" className="roster-chip social" onClick={() => copy(`${r.key}:${net}`, v.handle!)} title="Copy">
+                        {SOCIAL_LABEL[net] ?? net}: {v.handle} {copied === `${r.key}:${net}` ? "✓" : "⧉"}
+                      </button>
+                    ) : null
+                  ))}
+                  {wallets.map(([chain, addr]) => (
+                    <button key={chain} type="button" className="roster-chip wallet" onClick={() => copy(`${r.key}:${chain}`, addr as string)} title="Copy address">
+                      {WALLET_LABEL[chain] ?? chain} {copied === `${r.key}:${chain}` ? "copied ✓" : `${(addr as string).slice(0, 4)}…${(addr as string).slice(-4)} ⧉`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

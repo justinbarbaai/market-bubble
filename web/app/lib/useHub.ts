@@ -16,6 +16,21 @@ export interface ChatBadge {
   img: string | null;
 }
 
+// The Market Bubble member layer on a chatter's card: Floor standing, approved
+// clip record, and their public social links (set on /clips). Any field can be
+// missing — a brand-new chatter has none of it yet.
+export interface MemberCard {
+  points?: number;
+  rank?: number;
+  msgs?: number;
+  days?: number;
+  firstSeen?: number;
+  clips?: { approved: number; featured: number; views: number } | null;
+  socials?: Partial<
+    Record<"x" | "tiktok" | "instagram" | "discord" | "website", { handle?: string; url?: string }>
+  > | null;
+}
+
 export interface Profile {
   source: string;
   login: string;
@@ -23,6 +38,7 @@ export interface Profile {
   avatar: string | null;
   createdAt: string | null;
   description: string | null;
+  member?: MemberCard | null;
 }
 
 export interface ChatMessage {
@@ -326,7 +342,10 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
         if (msg.viewers && typeof msg.viewers === "object") setViewers(msg.viewers);
       } else if (msg.type === "profile") {
         const key = `${msg.source}:${String(msg.name).toLowerCase()}`;
-        setProfiles((prev) => ({ ...prev, [key]: msg.data ?? null }));
+        // Platform profile + the Market Bubble member layer (either may be null;
+        // keep the card if at least one side exists).
+        const data = msg.data ?? (msg.member ? {} : null);
+        setProfiles((prev) => ({ ...prev, [key]: data ? { ...data, member: msg.member ?? null } : null }));
       } else if (msg.type === "modResult") {
         setModResult({ ok: !!msg.ok, error: msg.error ?? null, action: msg.action, ts: Date.now() });
       } else if (msg.type === "sendResult") {

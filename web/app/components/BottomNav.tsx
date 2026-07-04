@@ -29,7 +29,7 @@ export function BottomNav() {
   }, []);
 
   // hide on operator/overlay surfaces — those aren't part of the public app
-  if (path.startsWith("/studio") || path.startsWith("/overlay") || path.startsWith("/reader")) {
+  if (path.startsWith("/studio") || path.startsWith("/overlay")) {
     return null;
   }
   return (

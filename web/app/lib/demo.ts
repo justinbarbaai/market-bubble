@@ -166,11 +166,13 @@ function makeViewers(tick: number): ViewerSnapshot {
 // Bubbles, derived from the same fake names so it reads as live.
 function makeFloor(): Floor {
   const srcs: SourceKey[] = ["twitch", "twitch", "kick", "twitch", "x", "kick", "twitch", "kick", "x", "twitch", "kick", "twitch"];
-  const top = NAMES.slice(0, 12).map((name, i) => ({
+  // A full ladder (24 deep) so the panel fills + scrolls instead of stopping
+  // short at #12. Smooth exponential decay keeps every rank positive + believable.
+  const top = NAMES.slice(0, 24).map((name, i) => ({
     rank: i + 1,
     name,
     source: srcs[i % srcs.length],
-    points: Math.round(9120 - i * 560 - i * i * 9),
+    points: Math.round(9120 * Math.pow(0.9, i)) + (24 - i),
   }));
   return { top, users: 1327, bubbles: 86430 };
 }

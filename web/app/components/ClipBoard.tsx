@@ -89,6 +89,9 @@ export function ClipBoard() {
       {/* ---- connect your clip accounts (identity) ---- */}
       {identity && <ConnectAccounts identity={identity} hubHttpUrl={hubHttpUrl} />}
 
+      {/* ---- payout + socials (crypto giveaways / shout-outs) ---- */}
+      {identity && <ProfilePanel identity={identity} hubHttpUrl={hubHttpUrl} />}
+
       {/* ---- submit ---- */}
       <section className="clip-submit">
         {identity ? (
@@ -281,6 +284,134 @@ function ConnectAccounts({
         </form>
       )}
       {msg && <p className={`clip-msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</p>}
+    </section>
+  );
+}
+
+// Payout + socials — a member adds their crypto GIVEAWAY addresses (SOL/ETH/BTC)
+// and social links so Banks & Ansem can pay winnings/bounties and shout them out.
+// Public receive addresses only; no wallet-connect, nothing that moves funds.
+const WALLETS = [
+  { key: "sol", label: "Solana", ph: "your SOL address" },
+  { key: "eth", label: "Ethereum", ph: "your ETH address (0x…)" },
+  { key: "btc", label: "Bitcoin", ph: "your BTC address" },
+] as const;
+const SOCIALS = [
+  { key: "x", label: "X", ph: "@handle" },
+  { key: "tiktok", label: "TikTok", ph: "@handle" },
+  { key: "instagram", label: "Instagram", ph: "@handle" },
+  { key: "discord", label: "Discord", ph: "username" },
+  { key: "website", label: "Website", ph: "yoursite.com" },
+] as const;
+type WalletKey = (typeof WALLETS)[number]["key"];
+type SocialKey = (typeof SOCIALS)[number]["key"];
+
+function ProfilePanel({
+  identity,
+  hubHttpUrl,
+}: {
+  identity: { source: "twitch" | "kick"; username: string };
+  hubHttpUrl: string;
+}) {
+  const [wallets, setWallets] = useState<Record<WalletKey, string>>({ sol: "", eth: "", btc: "" });
+  const [socials, setSocials] = useState<Record<SocialKey, string>>({ x: "", tiktok: "", instagram: "", discord: "", website: "" });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Prefill from the saved profile.
+  useEffect(() => {
+    let live = true;
+    fetch(`${hubHttpUrl}/profile?source=${identity.source}&username=${encodeURIComponent(identity.username)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!live || !j?.profile) return;
+        const p = j.profile;
+        setWallets({ sol: p.wallets?.sol ?? "", eth: p.wallets?.eth ?? "", btc: p.wallets?.btc ?? "" });
+        setSocials({
+          x: p.socials?.x?.handle ?? "",
+          tiktok: p.socials?.tiktok?.handle ?? "",
+          instagram: p.socials?.instagram?.handle ?? "",
+          discord: p.socials?.discord?.handle ?? "",
+          website: p.socials?.website?.url ?? "",
+        });
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [hubHttpUrl, identity.source, identity.username]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`${hubHttpUrl}/profile`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: identity.source, username: identity.username, wallets, socials }),
+      });
+      const j = await r.json();
+      if (j.ok && (!j.invalid || j.invalid.length === 0)) setMsg({ ok: true, text: "Saved ✓ — the show can pay you + tag you now." });
+      else if (j.ok) setMsg({ ok: false, text: `Saved, but check these — they didn't look right: ${j.invalid.join(", ")}` });
+      else setMsg({ ok: false, text: j.error || "Couldn't save." });
+    } catch {
+      setMsg({ ok: false, text: "Network error — try again." });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <section className="clip-prof">
+      <div className="clip-acc-head">
+        <span className="clip-acc-title">Payout &amp; socials</span>
+        <span className="clip-acc-sub">where to send giveaway winnings + how the show can find you</span>
+      </div>
+
+      <form onSubmit={save}>
+        <div className="prof-group">
+          <span className="prof-group-label">Crypto for giveaways &amp; bounties</span>
+          <div className="prof-grid">
+            {WALLETS.map((w) => (
+              <label key={w.key} className="prof-field">
+                <span className="prof-field-label">{w.label}</span>
+                <input
+                  className="clip-input"
+                  value={wallets[w.key]}
+                  onChange={(e) => setWallets((s) => ({ ...s, [w.key]: e.target.value }))}
+                  placeholder={w.ph}
+                  aria-label={`${w.label} address`}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="prof-note">Public receive addresses only — we never ask you to connect a wallet or sign anything.</p>
+        </div>
+
+        <div className="prof-group">
+          <span className="prof-group-label">Socials</span>
+          <div className="prof-grid">
+            {SOCIALS.map((s) => (
+              <label key={s.key} className="prof-field">
+                <span className="prof-field-label">{s.label}</span>
+                <input
+                  className="clip-input"
+                  value={socials[s.key]}
+                  onChange={(e) => setSocials((v) => ({ ...v, [s.key]: e.target.value }))}
+                  placeholder={s.ph}
+                  aria-label={s.label}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="prof-actions">
+          <button className="clip-submit-btn" type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
+          {msg && <span className={`clip-msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</span>}
+        </div>
+      </form>
     </section>
   );
 }

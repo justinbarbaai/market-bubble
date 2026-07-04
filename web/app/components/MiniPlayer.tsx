@@ -20,7 +20,6 @@ export function AutoMini() {
     if (
       path === "/" ||
       path.startsWith("/overlay") ||
-      path.startsWith("/reader") ||
       path.startsWith("/studio") ||
       path.startsWith("/watch")
     )

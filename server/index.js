@@ -13,10 +13,11 @@ import { fetchViewerSnapshot, fetchXLive } from "./sources/viewers.js";
 import { fetchContent } from "./sources/content.js";
 import { fetchEmoteList } from "./sources/emoteList.js";
 import { searchMarkets, getMarket } from "./sources/polymarket.js";
-import { loadFloor, flushFloor, recordMessage, recordVote, floorPayload, awardBubbles } from "./floor.js";
-import { loadClips, flushClips, submitClip, decideClip, featureClip, clipsPayload, setAttribution } from "./clips.js";
+import { loadFloor, flushFloor, recordMessage, recordVote, floorPayload, awardBubbles, balanceOf, memberStats } from "./floor.js";
+import { loadClips, flushClips, submitClip, decideClip, featureClip, clipsPayload, setAttribution, clipStatsFor } from "./clips.js";
 import { loadAccounts, flushAccounts, issueCode, verifyAccount, accountsFor, oembed, isVerifiedHandle, VERIFIABLE } from "./accounts.js";
 import { loadCockpit, flushCockpit, addEntry, addEntries, addSnapshot, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
+import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials } from "./profiles.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -270,6 +271,9 @@ setInterval(() => flushAccounts(), 20000).unref?.();
 // Distribution cockpit ledger persists too.
 await loadCockpit();
 setInterval(() => flushCockpit(), 20000).unref?.();
+// Member profiles (crypto payout addresses + socials) persist too.
+await loadProfiles();
+setInterval(() => flushProfiles(), 20000).unref?.();
 let saveTimer = null;
 function saveState() {
   if (saveTimer) clearTimeout(saveTimer);
@@ -1210,6 +1214,63 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- Member profiles: crypto giveaway addresses + social links ----
+  // Viewer reads/writes their own (identity by claimed source:username, same trust
+  // model as clips/accounts). The Roster (operator-only) reads everyone's.
+  if (url.pathname === "/profile" || url.pathname === "/roster") {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, x-op-key",
+      "Content-Type": "application/json",
+    };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    const json = (code, obj) => { res.writeHead(code, cors); res.end(JSON.stringify(obj)); };
+    const mbKeyOf = (source, username) =>
+      ["twitch", "kick", "x"].includes(String(source)) && String(username || "").trim()
+        ? `${source}:${String(username).trim().toLowerCase()}`
+        : null;
+
+    // Operator: the ranked Roster of everyone who added payout/social info.
+    if (url.pathname === "/roster") {
+      if (!operatorKeyOk(url.searchParams.get("key") || req.headers["x-op-key"]))
+        return json(401, { ok: false, error: "bad operator key" });
+      const roster = profileEntries()
+        .map(({ key, profile }) => {
+          const [source, ...rest] = key.split(":");
+          return { key, source, name: profile.name || rest.join(":"), points: balanceOf(key) ?? 0, profile };
+        })
+        .sort((a, b) => b.points - a.points);
+      return json(200, { roster, count: roster.length });
+    }
+
+    // Viewer: read own profile (for prefill).
+    if (req.method === "GET") {
+      const mbKey = mbKeyOf(url.searchParams.get("source"), url.searchParams.get("username"));
+      return json(200, { ok: true, profile: mbKey ? getProfile(mbKey) : null });
+    }
+
+    // Viewer: save own profile.
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        const mbKey = mbKeyOf(j.source, j.username);
+        if (!mbKey) return json(200, { ok: false, error: "Sign in first." });
+        return json(200, setProfile(mbKey, {
+          source: String(j.source || ""),
+          name: String(j.username || ""),
+          wallets: j.wallets && typeof j.wallets === "object" ? j.wallets : {},
+          socials: j.socials && typeof j.socials === "object" ? j.socials : {},
+        }));
+      });
+      return;
+    }
+
+    return json(404, { ok: false, error: "unknown profile route" });
+  }
+
   // ---- Distribution Cockpit (operator-only ROI ledger) ----
   if (url.pathname.startsWith("/cockpit")) {
     const cors = {
@@ -1365,13 +1426,25 @@ wss.on("connection", (ws, req) => {
       const name = msg.name.trim();
       const source = msg.source;
       if (!name) return;
+      // The Market Bubble member layer: Floor standing + approved clip record +
+      // public social links (never wallets — those are operator-only).
+      const mbKey = `${source}:${name.toLowerCase()}`;
+      const stats = memberStats(mbKey);
+      const clipRec = clipStatsFor(mbKey);
+      const socials = publicSocials(mbKey);
+      const member = stats || clipRec || socials ? { ...(stats || {}), clips: clipRec, socials } : null;
       fetchProfile(source, name, twitchCreds)
         .then((data) => {
           if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ type: "profile", source, name, data }));
+            ws.send(JSON.stringify({ type: "profile", source, name, data, member }));
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          // Platform profile fetch failed — still send the member layer.
+          if (ws.readyState === ws.OPEN && member) {
+            ws.send(JSON.stringify({ type: "profile", source, name, data: null, member }));
+          }
+        });
       return;
     }
     if (msg.type === "kickModerate" && typeof msg.slug === "string" && msg.targetUserId) {
@@ -1497,6 +1570,7 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
     flushClips();
     flushAccounts();
     flushCockpit();
+    flushProfiles();
     stopSources();
     wss.close();
     server.close(() => process.exit(0));

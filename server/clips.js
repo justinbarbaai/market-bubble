@@ -206,6 +206,19 @@ function publicClip(c) {
   };
 }
 
+// A member's clip record for their public profile card (approved work only).
+export function clipStatsFor(by) {
+  let approved = 0, featured = 0, views = 0;
+  for (const id in clips) {
+    const c = clips[id];
+    if (c.by !== by || c.status !== "approved") continue;
+    approved++;
+    views += c.views;
+    if (c.featured) featured++;
+  }
+  return approved > 0 ? { approved, featured, views } : null;
+}
+
 // The public wall is the campaign leaderboard: the TOP 10 approved clips RANKED
 // BY VIEWS (most reach wins). `all` (operator) returns the full list incl.
 // pending/rejected for the Studio review queue.

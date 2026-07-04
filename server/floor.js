@@ -145,6 +145,25 @@ export function balanceOf(key) {
   return u ? u.points : null;
 }
 
+// A member's Floor standing for their public profile card: balance, live rank,
+// tenure. Rank is computed on demand (same ordering as the leaderboard).
+export function memberStats(key) {
+  const u = users[key];
+  if (!u) return null;
+  let rank = 1;
+  for (const k in users) {
+    const o = users[k];
+    if (o.points > u.points || (o.points === u.points && o.msgs > u.msgs)) rank++;
+  }
+  return {
+    points: u.points,
+    rank,
+    msgs: u.msgs,
+    days: u.days,
+    firstSeen: u.firstSeen,
+  };
+}
+
 // Leaderboard snapshot for the room panel: the top N + the totals.
 export function floorPayload(n = 12) {
   const all = Object.values(users);

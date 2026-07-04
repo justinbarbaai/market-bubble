@@ -464,6 +464,47 @@ function Row({
                 </span>
               )}
             </span>
+
+            {/* Market Bubble member layer — their standing on the show, like a
+                social-platform profile. Only renders once they've earned/set
+                something (fresh chatters keep the plain platform card). */}
+            {profile?.member && (
+              <span className="cf-card-member">
+                {profile.member.points != null && (
+                  <span className="cf-card-mb-row">
+                    <span className="cf-card-mb-rank">#{profile.member.rank}</span>
+                    <span className="cf-card-mb-pts">{profile.member.points.toLocaleString("en-US")} ◆</span>
+                    <span className="cf-card-mb-label">on The Floor</span>
+                    {(profile.member.days ?? 0) > 1 && (
+                      <span className="cf-card-mb-days">{profile.member.days} shows</span>
+                    )}
+                  </span>
+                )}
+                {profile.member.clips && (
+                  <span className="cf-card-mb-clips">
+                    {profile.member.clips.approved} clip{profile.member.clips.approved === 1 ? "" : "s"} ·{" "}
+                    {profile.member.clips.views.toLocaleString("en-US")} views
+                    {profile.member.clips.featured > 0 && <b> · ★ featured on the show</b>}
+                  </span>
+                )}
+                {profile.member.socials && (
+                  <span className="cf-card-socials">
+                    {Object.entries(profile.member.socials).map(([net, v]) =>
+                      v?.url ? (
+                        <a key={net} className="cf-card-social" href={v.url} target="_blank" rel="noreferrer noopener">
+                          {net === "x" ? "𝕏" : net === "website" ? "site" : net}
+                          {v.handle ? ` @${v.handle}` : ""}
+                        </a>
+                      ) : v?.handle ? (
+                        <span key={net} className="cf-card-social" title={`${net}: ${v.handle}`}>
+                          {net} {v.handle}
+                        </span>
+                      ) : null
+                    )}
+                  </span>
+                )}
+              </span>
+            )}
             {channel && channel !== SOURCE_LABELS[m.source] && (
               <span className="cf-card-foot">chatting in {channel}</span>
             )}

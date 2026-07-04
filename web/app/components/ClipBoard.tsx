@@ -5,7 +5,7 @@ import { useHub } from "../lib/useHub";
 import type { Clip } from "../lib/useHub";
 import { getAuth, startLogin } from "../lib/twitchAuth";
 import { useKickSession } from "../lib/kickAuth";
-import { ConnectAccounts, ProfilePanel, PLATFORM_LABEL } from "./ProfileSections";
+import { ConnectAccounts, ProfilePanel, PLATFORM_LABEL, identityProof } from "./ProfileSections";
 
 // Clip-to-Earn — viewers turn the show into reach. Submit a clip you posted
 // (TikTok / YouTube / X / Reels, or a native Twitch/Kick clip), it gets reviewed,
@@ -39,7 +39,7 @@ export function ClipBoard() {
       const r = await fetch(`${hubHttpUrl}/clips/submit`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), source: identity.source, username: identity.username }),
+        body: JSON.stringify({ url: url.trim(), source: identity.source, username: identity.username, ...identityProof() }),
       });
       const j = await r.json();
       if (j.ok) {

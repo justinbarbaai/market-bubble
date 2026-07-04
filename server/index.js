@@ -13,11 +13,12 @@ import { fetchViewerSnapshot, fetchXLive } from "./sources/viewers.js";
 import { fetchContent } from "./sources/content.js";
 import { fetchEmoteList } from "./sources/emoteList.js";
 import { searchMarkets, getMarket } from "./sources/polymarket.js";
-import { loadFloor, flushFloor, recordMessage, recordVote, floorPayload, awardBubbles, balanceOf, memberStats } from "./floor.js";
+import { loadFloor, flushFloor, pruneFloor, recordMessage, recordVote, floorPayload, awardBubbles, balanceOf, memberStats } from "./floor.js";
 import { loadClips, flushClips, submitClip, decideClip, featureClip, clipsPayload, setAttribution, clipStatsFor } from "./clips.js";
 import { loadAccounts, flushAccounts, issueCode, verifyAccount, accountsFor, oembed, isVerifiedHandle, VERIFIABLE } from "./accounts.js";
 import { loadCockpit, flushCockpit, addEntry, addEntries, addSnapshot, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
 import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials, publicWallets } from "./profiles.js";
+import { storeHealth } from "./store.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -130,6 +131,47 @@ function ingestKeyOk(key) {
   const b = Buffer.from(INGEST_KEY);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
+// ---- viewer identity proof ----
+// Public writes that claim an identity (profile wallets/socials, account links,
+// clip submissions) must PROVE it — otherwise anyone could claim "twitch:4jstn"
+// and swap his giveaway address for theirs. Twitch: validate the viewer's own
+// OAuth token and match its login. Kick: their hub session must resolve to the
+// claimed username. No proof → rejected.
+const twitchValidateCache = new Map(); // token -> { login, exp }
+async function verifyClaim(source, username, { twitchToken, kickSession } = {}) {
+  const want = String(username || "").trim().toLowerCase();
+  if (!want) return false;
+  if (source === "twitch") {
+    const tok = String(twitchToken || "");
+    if (!tok) return false;
+    const hit = twitchValidateCache.get(tok);
+    if (hit && Date.now() < hit.exp) return hit.login === want;
+    try {
+      const r = await fetch("https://id.twitch.tv/oauth2/validate", {
+        headers: { Authorization: `OAuth ${tok}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) return false;
+      const j = await r.json();
+      const login = String(j.login || "").toLowerCase();
+      twitchValidateCache.set(tok, { login, exp: Date.now() + 5 * 60000 });
+      if (twitchValidateCache.size > 5000) twitchValidateCache.delete(twitchValidateCache.keys().next().value);
+      return login === want;
+    } catch {
+      return false;
+    }
+  }
+  if (source === "kick") {
+    const info = kickSessionInfo(String(kickSession || ""));
+    return !!info.connected && String(info.username || "").toLowerCase() === want;
+  }
+  return false; // no way to sign in as an X viewer on the site today
+}
+
+// Tight budget for identity-claiming writes (profile/accounts/clip-submit):
+// 12 burst, ~12/min sustained — humans never notice, floods bounce.
+const writeLimited = (req) => rateLimited(clientIp(req), 12, 0.2);
 // X live-viewer counts pushed by the extension — ONE entry per broadcast tab
 // (Banks / Ansem / Market Bubble), keyed by host. X killed the public endpoints,
 // so these pushes are the only accurate source. Combined into one bar number +
@@ -264,6 +306,7 @@ function loadState() {
 // show), loaded on boot and flushed periodically + on shutdown.
 await loadFloor();
 setInterval(() => flushFloor(), 20000).unref?.();
+setInterval(() => pruneFloor(), 6 * 3600e3).unref?.(); // keep the doc bounded
 // Clip-to-Earn submissions persist alongside the Floor.
 await loadClips();
 setInterval(() => flushClips(), 20000).unref?.();
@@ -697,6 +740,10 @@ const server = http.createServer(async (req, res) => {
           extSent: lastExtSent,
         },
         viewersUpdatedAgoSec: lastViewersAt ? Math.round((now - lastViewersAt) / 1000) : null,
+        // Durable-store health: ok=false → Redis is configured but FAILING and
+        // state is silently falling back to the ephemeral disk (the July 2026
+        // "vanished Upstash DB" incident). Studio health strip alarms on this.
+        store: storeHealth(),
       })
     );
     return;
@@ -1091,14 +1138,20 @@ const server = http.createServer(async (req, res) => {
     // is claimed by the client; the operator-approval gate is the fraud check
     // (and what actually pays out), so a spoofed name can't earn unreviewed.
     if (url.pathname === "/clips/submit" && req.method === "POST") {
+      if (writeLimited(req)) { res.writeHead(429, cors); res.end(JSON.stringify({ ok: false, error: "Slow down — try again in a minute." })); return; }
       let body = "";
       req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
-      req.on("end", () => {
+      req.on("end", async () => {
         let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
         const source = String(j.source || "").toLowerCase();
         const username = String(j.username || "").trim();
-        if (!username || !["twitch", "kick", "x"].includes(source)) {
+        if (!username || !["twitch", "kick"].includes(source)) {
           res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Sign in to submit a clip." })); return;
+        }
+        // Prove the submitter is who they claim — the payout identity rides on it.
+        const proven = await verifyClaim(source, username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
+        if (!proven) {
+          res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Couldn't verify it's you — sign in again and retry." })); return;
         }
         const mbKey = `${source}:${username.toLowerCase()}`;
         const out = submitClip({ url: j.url, by: mbKey, bySource: source, byName: username });
@@ -1187,14 +1240,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // POST /accounts/code {source,username,platform,handle} → issue a link code
+    // POST /accounts/code {source,username,platform,handle} → issue a link code.
+    // Identity proven (token/session) so nobody links THEIR accounts to YOUR key.
     if (url.pathname === "/accounts/code" && req.method === "POST") {
+      if (writeLimited(req)) { res.writeHead(429, cors); res.end(JSON.stringify({ ok: false, error: "Slow down — try again in a minute." })); return; }
       let body = "";
       req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
-      req.on("end", () => {
+      req.on("end", async () => {
         let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
         const mbKey = mbKeyOf(j.source, j.username);
         if (!mbKey) { res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Sign in first." })); return; }
+        const proven = await verifyClaim(j.source, j.username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
+        if (!proven) { res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Couldn't verify it's you — sign in again and retry." })); return; }
         res.writeHead(200, cors);
         res.end(JSON.stringify(issueCode(mbKey, String(j.platform || ""), String(j.handle || ""))));
       });
@@ -1203,12 +1260,15 @@ const server = http.createServer(async (req, res) => {
 
     // POST /accounts/verify {source,username,platform,handle,clipUrl} → confirm
     if (url.pathname === "/accounts/verify" && req.method === "POST") {
+      if (writeLimited(req)) { res.writeHead(429, cors); res.end(JSON.stringify({ ok: false, error: "Slow down — try again in a minute." })); return; }
       let body = "";
       req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
       req.on("end", async () => {
         let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
         const mbKey = mbKeyOf(j.source, j.username);
         if (!mbKey) { res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Sign in first." })); return; }
+        const proven = await verifyClaim(j.source, j.username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
+        if (!proven) { res.writeHead(200, cors); res.end(JSON.stringify({ ok: false, error: "Couldn't verify it's you — sign in again and retry." })); return; }
         const out = await verifyAccount(mbKey, String(j.platform || ""), String(j.handle || ""), String(j.clipUrl || ""));
         res.writeHead(200, cors);
         res.end(JSON.stringify(out));
@@ -1271,14 +1331,18 @@ const server = http.createServer(async (req, res) => {
       return json(200, { ok: true, profile: mbKey ? getProfile(mbKey) : null });
     }
 
-    // Viewer: save own profile.
+    // Viewer: save own profile. Identity is PROVEN (token/session), not claimed
+    // — this write sets the giveaway address shown publicly on their card.
     if (req.method === "POST") {
+      if (writeLimited(req)) return json(429, { ok: false, error: "Slow down — try again in a minute." });
       let body = "";
       req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
-      req.on("end", () => {
+      req.on("end", async () => {
         let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
         const mbKey = mbKeyOf(j.source, j.username);
         if (!mbKey) return json(200, { ok: false, error: "Sign in first." });
+        const proven = await verifyClaim(j.source, j.username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
+        if (!proven) return json(200, { ok: false, error: "Couldn't verify it's you — sign in again and retry." });
         return json(200, setProfile(mbKey, {
           source: String(j.source || ""),
           name: String(j.username || ""),

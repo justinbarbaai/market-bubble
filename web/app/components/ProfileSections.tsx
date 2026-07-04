@@ -2,10 +2,22 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
+import { getAuth } from "../lib/twitchAuth";
+import { getKickSession } from "../lib/kickAuth";
 
 // Shared member-profile sections — used on /profile (your account page) and
 // /clips (the campaign page): link the outside accounts you clip from, and set
 // your payout addresses + social links.
+
+// Identity-claiming writes must carry PROOF (the hub verifies it): the viewer's
+// own Twitch token or Kick session — otherwise anyone could claim your name and
+// swap your giveaway address for theirs.
+export function identityProof() {
+  return {
+    twitchToken: getAuth()?.token || undefined,
+    kickSession: getKickSession()?.id || undefined,
+  };
+}
 
 export const PLATFORM_LABEL: Record<string, string> = {
   tiktok: "TikTok",
@@ -60,7 +72,7 @@ export function ConnectAccounts({
     try {
       const r = await fetch(`${hubHttpUrl}/accounts/code`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ source: identity.source, username: identity.username, platform, handle: handle.trim() }),
+        body: JSON.stringify({ source: identity.source, username: identity.username, platform, handle: handle.trim(), ...identityProof() }),
       });
       const j = await r.json();
       const h = handle.trim().replace(/^@/, "");
@@ -81,7 +93,7 @@ export function ConnectAccounts({
     try {
       const r = await fetch(`${hubHttpUrl}/accounts/verify`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ source: identity.source, username: identity.username, platform: pending.platform, handle: pending.handle, clipUrl: clipUrl.trim() }),
+        body: JSON.stringify({ source: identity.source, username: identity.username, platform: pending.platform, handle: pending.handle, clipUrl: clipUrl.trim(), ...identityProof() }),
       });
       const j = await r.json();
       if (j.ok && j.verified) { setMsg({ ok: true, text: `@${pending.handle} verified ✓` }); setPending(null); setClipUrl(""); setHandle(""); refresh(); }
@@ -215,7 +227,7 @@ export function ProfilePanel({
       const r = await fetch(`${hubHttpUrl}/profile`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ source: identity.source, username: identity.username, wallets, socials }),
+        body: JSON.stringify({ source: identity.source, username: identity.username, wallets, socials, ...identityProof() }),
       });
       const j = await r.json();
       if (j.ok && (!j.invalid || j.invalid.length === 0)) {

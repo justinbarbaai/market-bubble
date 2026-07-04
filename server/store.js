@@ -12,6 +12,42 @@ export const DURABLE = !!(REST_URL && REST_TOKEN);
 
 const TIMEOUT = 8000;
 
+// ---- health ----
+// The July 2026 incident: the Upstash DB was deleted out from under us and the
+// silent file fallback made "durable" storage quietly ephemeral for days —
+// every deploy wiped prod. Never silent again: every Redis failure is tracked
+// here, exposed on /status, and shown red on the Studio health strip.
+const health = {
+  lastOkAt: 0,
+  lastErrorAt: 0,
+  lastError: null,
+  fails: 0, // consecutive failures
+};
+export function storeHealth() {
+  return {
+    durable: DURABLE,
+    // ok=false means Redis is configured but its last operation FAILED —
+    // writes are landing on the ephemeral disk and will die with the dyno.
+    ok: DURABLE ? health.fails === 0 : null,
+    lastOkAt: health.lastOkAt || null,
+    lastError: health.lastError,
+    lastErrorAt: health.lastErrorAt || null,
+    consecutiveFails: health.fails,
+  };
+}
+function markOk() {
+  health.lastOkAt = Date.now();
+  health.fails = 0;
+}
+function markFail(op, key, e) {
+  health.fails++;
+  health.lastErrorAt = Date.now();
+  health.lastError = `${op} ${key}: ${e.message}`;
+  // console.error (not warn) so it stands out in Render logs; every failure —
+  // a dead store is an incident, not noise.
+  console.error(`[store] REDIS ${op.toUpperCase()} FAILED for ${key}: ${e.message} — durable storage is DOWN, state is falling back to the ephemeral disk`);
+}
+
 async function redisGet(key) {
   const r = await fetch(`${REST_URL}/get/${encodeURIComponent(key)}`, {
     headers: { Authorization: `Bearer ${REST_TOKEN}` },
@@ -39,10 +75,11 @@ export async function loadDoc(key, file) {
   if (DURABLE) {
     try {
       const s = await redisGet(key);
+      markOk();
       if (s) return JSON.parse(s);
       return null;
     } catch (e) {
-      console.warn(`[store] redis load ${key} failed (${e.message}) — falling back to file`);
+      markFail("load", key, e);
     }
   }
   try {
@@ -54,14 +91,18 @@ export async function loadDoc(key, file) {
 
 // Save a JSON doc. Writes to Redis when configured (durable), else the local
 // file. Returns a promise; callers may fire-and-forget on a timer.
+// Even when Redis is configured, the file is ALSO written on failure so a
+// restart-without-deploy at least keeps recent state — but that path is a
+// degraded mode, and storeHealth() reports it.
 export async function saveDoc(key, file, obj) {
   const s = JSON.stringify(obj);
   if (DURABLE) {
     try {
       await redisSet(key, s);
+      markOk();
       return;
     } catch (e) {
-      console.warn(`[store] redis save ${key} failed (${e.message}) — falling back to file`);
+      markFail("save", key, e);
     }
   }
   try {

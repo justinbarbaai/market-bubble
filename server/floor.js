@@ -36,6 +36,28 @@ function minuteOf(ts) {
 export async function loadFloor() {
   const raw = await loadDoc("mb:floor", FLOOR_FILE);
   if (raw && typeof raw === "object" && raw.users) users = raw.users;
+  pruneFloor();
+}
+
+// Keep the doc bounded: every chatter ever would otherwise live in the store
+// forever (rewritten every 20s). Drop drive-by lurkers — tiny balances idle for
+// a month. Anyone with a real balance is kept indefinitely.
+const PRUNE_IDLE_MS = 30 * 24 * 3600e3;
+const PRUNE_MAX_POINTS = 100; // below this AND idle → gone
+export function pruneFloor(now = Date.now()) {
+  let dropped = 0;
+  for (const k in users) {
+    const u = users[k];
+    if (u.points < PRUNE_MAX_POINTS && now - (u.lastSeen || 0) > PRUNE_IDLE_MS) {
+      delete users[k];
+      dropped++;
+    }
+  }
+  if (dropped > 0) {
+    dirty = true;
+    console.log(`[floor] pruned ${dropped} idle low-balance chatters`);
+  }
+  return dropped;
 }
 
 export function flushFloor() {

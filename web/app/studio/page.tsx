@@ -740,6 +740,7 @@ type HubStatus = {
   sources: { twitch: boolean; kick: boolean };
   bridge: { xchatAgoSec: number | null; xLiveAgoSec: number | null };
   viewersUpdatedAgoSec: number | null;
+  store?: { durable: boolean; ok: boolean | null; lastError: string | null };
 };
 
 function HealthStrip({ hubHttpUrl }: { hubHttpUrl: string }) {
@@ -781,6 +782,19 @@ function HealthStrip({ hubHttpUrl }: { hubHttpUrl: string }) {
         { label: "Kick src", ok: st.sources.kick, detail: st.channels.kick.join(", ") || "no channel" },
         { label: "X bridge", ok: bridgeFresh, detail: `chat ${fmtAgo(st.bridge.xchatAgoSec)}` },
         { label: "Viewer counts", ok: st.viewersUpdatedAgoSec != null && st.viewersUpdatedAgoSec < 120, detail: fmtAgo(st.viewersUpdatedAgoSec) },
+        // Durable storage — red means Redis is missing/failing and Bubbles,
+        // clips, profiles + Kick logins will be WIPED on the next deploy.
+        {
+          label: "Storage",
+          ok: st.store ? st.store.ok !== false && st.store.durable : false,
+          detail: !st.store
+            ? "unknown"
+            : !st.store.durable
+            ? "NOT durable — no Redis configured"
+            : st.store.ok === false
+            ? `FAILING: ${st.store.lastError ?? "unreachable"}`
+            : "durable ✓",
+        },
       ];
 
   return (

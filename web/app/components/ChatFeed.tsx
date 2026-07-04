@@ -506,8 +506,13 @@ function Row({
               <span className="cf-card-avatar cf-card-avatar-fallback" style={{ background: m.color }}>
                 {m.username.charAt(0).toUpperCase()}
                 {avatar && (
+                  // keyed by src: when the unavatar fallback 404s (hidden via
+                  // onError) and the REAL avatar arrives from the hub, React
+                  // remounts the img — otherwise the inline display:none sticks
+                  // and the letter tile shows forever.
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
+                    key={avatar}
                     className="cf-card-avatar-img"
                     src={avatar}
                     alt=""

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { loadDoc, saveDoc } from "../store.js";
 
 // Kick OAuth 2.1 (authorization code + PKCE) and the authenticated API calls it
 // unlocks: sending chat and moderation (timeout/ban). Kick requires the token
@@ -28,6 +29,34 @@ let token = null; // { access_token, refresh_token, expires_at, scope }
 // Per-viewer tokens: sessionId -> token obj (+ username). Each visitor that signs
 // into Kick gets their own entry so they chat as themselves.
 const sessions = new Map();
+
+// ---- durable persistence (Upstash via store.js) ----
+// These tokens used to live only in memory, so EVERY hub deploy / Render
+// spin-down silently signed everyone out of Kick (the browser still held its
+// session id → "connect Kick" errors on send). Refresh tokens make a restored
+// session self-heal even after the access token expires.
+const KICK_FILE = new URL("../.mb-kick.json", import.meta.url);
+let dirty = false;
+const markDirty = () => { dirty = true; };
+
+export async function loadKickAuth() {
+  const raw = await loadDoc("mb:kick", KICK_FILE);
+  if (!raw || typeof raw !== "object") return;
+  if (raw.token?.access_token) token = raw.token;
+  if (raw.sessions && typeof raw.sessions === "object") {
+    for (const [id, t] of Object.entries(raw.sessions)) {
+      if (t?.access_token || t?.refresh_token) sessions.set(id, t);
+    }
+  }
+}
+export function flushKickAuth() {
+  if (!dirty) return;
+  dirty = false;
+  saveDoc("mb:kick", KICK_FILE, { token, sessions: Object.fromEntries(sessions), savedAt: Date.now() }).catch((e) => {
+    dirty = true;
+    console.warn("[kick] save failed:", e.message);
+  });
+}
 
 // ---- shared token helpers (used by both operator + per-viewer flows) ----
 function tokenObj(j, prev) {
@@ -98,6 +127,7 @@ export function kickConnected() {
 
 export function disconnectKick() {
   token = null;
+  markDirty();
 }
 
 export function buildKickLoginUrl(creds, redirectUri) {
@@ -132,6 +162,7 @@ export async function handleKickCallback(creds, redirectUri, code, state) {
     sessions.set(entry.sessionId, tok);
     // bound memory: drop the oldest if we somehow accrue a huge number
     if (sessions.size > 2000) sessions.delete(sessions.keys().next().value);
+    markDirty();
     return { sessionId: entry.sessionId, username: tok.username, returnOrigin: entry.returnOrigin || null };
   }
 
@@ -168,6 +199,7 @@ export function kickSessionInfo(sessionId) {
 
 export function disconnectKickSession(sessionId) {
   sessions.delete(sessionId);
+  markDirty();
 }
 
 async function sessionAccessToken(creds, sessionId) {
@@ -176,6 +208,7 @@ async function sessionAccessToken(creds, sessionId) {
   if (Date.now() > t.expires_at - 30000) {
     if (!t.refresh_token) {
       sessions.delete(sessionId);
+      markDirty();
       throw new Error("Kick session expired — sign in again.");
     }
     try {
@@ -183,9 +216,11 @@ async function sessionAccessToken(creds, sessionId) {
       const nt = tokenObj(j, t);
       nt.username = t.username;
       sessions.set(sessionId, nt);
+      markDirty();
       return nt.access_token;
     } catch {
       sessions.delete(sessionId);
+      markDirty();
       throw new Error("Kick session expired — sign in again.");
     }
   }
@@ -208,6 +243,7 @@ export async function kickSendAs(creds, sessionId, { broadcasterUserId, content 
     let msg = `Kick send failed (${res.status})`;
     if (res.status === 401) {
       sessions.delete(sessionId);
+      markDirty();
       msg = "Kick session expired — sign in again.";
     } else {
       try {
@@ -227,6 +263,7 @@ function storeToken(j) {
     expires_at: Date.now() + (Number(j.expires_in) || 3600) * 1000,
     scope: j.scope || SCOPES,
   };
+  markDirty();
 }
 
 async function refreshToken(creds) {
@@ -244,6 +281,7 @@ async function refreshToken(creds) {
   });
   if (!res.ok) {
     token = null;
+    markDirty();
     throw new Error("Kick session expired — reconnect.");
   }
   storeToken(await res.json());

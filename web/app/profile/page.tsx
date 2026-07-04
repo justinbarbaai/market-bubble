@@ -84,7 +84,7 @@ export default function ProfilePage() {
           <section className="profpage-hero">
             <span className="profpage-av">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={avatar} alt="" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
+              <img key={avatar} src={avatar} alt="" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
               <b>{identity.username.charAt(0).toUpperCase()}</b>
             </span>
             <div className="profpage-id">

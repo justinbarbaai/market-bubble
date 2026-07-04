@@ -35,6 +35,8 @@ import {
   kickBan,
   kickSend,
   kickSendAs,
+  loadKickAuth,
+  flushKickAuth,
 } from "./sources/kickAuth.js";
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -274,6 +276,10 @@ setInterval(() => flushCockpit(), 20000).unref?.();
 // Member profiles (crypto payout addresses + socials) persist too.
 await loadProfiles();
 setInterval(() => flushProfiles(), 20000).unref?.();
+// Kick tokens (operator + per-viewer sessions) persist so deploys/restarts
+// don't sign everyone out of Kick chat.
+await loadKickAuth();
+setInterval(() => flushKickAuth(), 20000).unref?.();
 let saveTimer = null;
 function saveState() {
   if (saveTimer) clearTimeout(saveTimer);
@@ -1587,6 +1593,7 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
     flushAccounts();
     flushCockpit();
     flushProfiles();
+    flushKickAuth();
     stopSources();
     wss.close();
     server.close(() => process.exit(0));

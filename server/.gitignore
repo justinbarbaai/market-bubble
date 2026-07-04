@@ -6,3 +6,5 @@ node_modules/
 .mb-clips.json
 .mb-accounts.json
 .mb-cockpit.json
+.mb-profiles.json
+.mb-kick.json

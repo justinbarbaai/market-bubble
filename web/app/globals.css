@@ -1335,6 +1335,9 @@ a.cf-card-head:hover {
   gap: 5px;
 }
 .cf-card-social {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--mono);
   font-size: 10px;
   line-height: 1.5;
@@ -1347,6 +1350,7 @@ a.cf-card-head:hover {
   white-space: nowrap;
   cursor: pointer;
 }
+.cf-card-social svg { flex: 0 0 auto; opacity: 0.85; }
 a.cf-card-social:hover,
 button.cf-card-social:hover {
   border-color: var(--text);
@@ -9176,7 +9180,8 @@ body.panel-dragging iframe {
 .roster-name { font-weight: 600; font-size: 14px; }
 .roster-pts { margin-left: auto; font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--up); }
 .roster-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.roster-chip { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border-2); background: none; color: var(--text); text-decoration: none; cursor: pointer; line-height: 1.6; }
+.roster-chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border-2); background: none; color: var(--text); text-decoration: none; cursor: pointer; line-height: 1.6; }
+.roster-chip svg { flex: 0 0 auto; opacity: 0.85; }
 .roster-chip:hover { border-color: var(--text); }
 .roster-chip.wallet { color: var(--up); border-color: color-mix(in srgb, var(--up) 45%, var(--border-2)); }
 

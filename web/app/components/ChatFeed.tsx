@@ -4,7 +4,7 @@ import { useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 import type { ChatMessage, ChatBadge, Profile } from "../lib/useHub";
 import type { OverlayOptions } from "../lib/overlay";
 import { FONT_STACKS } from "../lib/overlay";
-import { SourceLogo, SOURCE_LABELS } from "./logos";
+import { SourceLogo, SocialLogo, SOURCE_LABELS } from "./logos";
 import { KICK_BADGES } from "./kickBadges";
 
 function nameColorFor(m: ChatMessage, mode: OverlayOptions["nameColor"]): string {
@@ -558,13 +558,13 @@ function Row({
                 {profile.member.socials &&
                   Object.entries(profile.member.socials).map(([net, v]) =>
                     v?.url ? (
-                      <a key={net} className="cf-card-social" href={v.url} target="_blank" rel="noreferrer noopener">
-                        {net === "x" ? "𝕏" : net === "website" ? "site" : net}
-                        {v.handle ? ` ${v.handle}` : ""}
+                      <a key={net} className="cf-card-social" href={v.url} target="_blank" rel="noreferrer noopener" title={net}>
+                        <SocialLogo net={net} size={11} />
+                        {v.handle ? ` ${v.handle}` : net === "website" ? " site" : ""}
                       </a>
                     ) : v?.handle ? (
                       <span key={net} className="cf-card-social" title={`${net}: ${v.handle}`}>
-                        {net} {v.handle}
+                        <SocialLogo net={net} size={11} /> {v.handle}
                       </span>
                     ) : null
                   )}

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChatFeed } from "../components/ChatFeed";
 import { useHub, type Poll } from "../lib/useHub";
 import { SITE_DEFAULT_LOOK, type OverlayOptions } from "../lib/overlay";
-import { SourceLogo, SOURCE_LABELS, type SourceKey } from "../components/logos";
+import { SourceLogo, SocialLogo, SOURCE_LABELS, type SourceKey } from "../components/logos";
 import { MBLockup } from "../components/brand";
 import { StudioGate } from "../components/StudioGate";
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -1266,12 +1266,12 @@ function Roster({ hubHttpUrl }: { hubHttpUrl: string }) {
                 <div className="roster-links">
                   {socials.map(([net, v]) => (
                     v?.url ? (
-                      <a key={net} className="roster-chip social" href={v.url} target="_blank" rel="noreferrer noopener">
-                        {SOCIAL_LABEL[net] ?? net}{v.handle ? ` @${v.handle}` : ""}
+                      <a key={net} className="roster-chip social" href={v.url} target="_blank" rel="noreferrer noopener" title={SOCIAL_LABEL[net] ?? net}>
+                        <SocialLogo net={net} size={11} />{v.handle ? ` @${v.handle}` : net === "website" ? " site" : ""}
                       </a>
                     ) : v?.handle ? (
-                      <button key={net} type="button" className="roster-chip social" onClick={() => copy(`${r.key}:${net}`, v.handle!)} title="Copy">
-                        {SOCIAL_LABEL[net] ?? net}: {v.handle} {copied === `${r.key}:${net}` ? "✓" : "⧉"}
+                      <button key={net} type="button" className="roster-chip social" onClick={() => copy(`${r.key}:${net}`, v.handle!)} title={`Copy ${SOCIAL_LABEL[net] ?? net}`}>
+                        <SocialLogo net={net} size={11} /> {v.handle} {copied === `${r.key}:${net}` ? "✓" : "⧉"}
                       </button>
                     ) : null
                   ))}

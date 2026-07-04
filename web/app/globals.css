@@ -1160,6 +1160,7 @@ code {
 .cf-user {
   font-weight: 800;
   overflow-wrap: anywhere;
+  cursor: pointer; /* names are tappable → profile card */
 }
 /* hover a viewer → a rich profile card (avatar, handle, badges, stats) */
 .cf-card {
@@ -1400,7 +1401,8 @@ a.cf-card-social:hover {
 .cf-card-mod-ban:hover {
   background: rgba(255, 70, 70, 0.16) !important;
 }
-.cf-userwrap:hover .cf-card {
+.cf-userwrap:hover .cf-card,
+.cf-userwrap.cardopen .cf-card {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;

@@ -178,6 +178,25 @@ export function ChatFeed({
   const anchorRef = useRef<{ id: string; offset: number } | null>(null);
   const [paused, setPaused] = useState(false);
 
+  // Click a name → the profile card pins open (tap-friendly; hover still works
+  // on desktop). One card at a time; click-away or Esc closes it.
+  const [openCard, setOpenCard] = useState<string | null>(null);
+  useEffect(() => {
+    if (!openCard) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest(".cf-card") || t.closest(".cf-user")) return;
+      setOpenCard(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpenCard(null);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openCard]);
+
   const captureAnchor = () => {
     const el = feedRef.current;
     if (!el) return;
@@ -281,6 +300,11 @@ export function ChatFeed({
                 first={firstIdsRef.current.get(key) === m.id}
                 onHoverUser={onHoverUser}
                 moderation={moderation}
+                cardOpen={openCard === m.id}
+                onToggleCard={() => {
+                  onHoverUser?.(m.source, m.username); // make sure the profile is requested on tap
+                  setOpenCard((prev) => (prev === m.id ? null : m.id));
+                }}
               />
             );
           })
@@ -307,6 +331,8 @@ function Row({
   first,
   onHoverUser,
   moderation,
+  cardOpen,
+  onToggleCard,
 }: {
   m: ChatMessage;
   badge: OverlayOptions["badge"];
@@ -320,6 +346,9 @@ function Row({
   first?: boolean;
   onHoverUser?: (source: string, username: string) => void;
   moderation?: Moderation;
+  /** the profile card is pinned open (clicked/tapped name) */
+  cardOpen?: boolean;
+  onToggleCard?: () => void;
 }) {
   const displayName = profile?.displayName || m.username;
   const since = profile?.createdAt ? new Date(profile.createdAt).getFullYear() : null;
@@ -404,10 +433,18 @@ function Row({
         {timestamps && <span className="cf-time">{fmtTime(m.timestamp)}</span>}
         <Badges badges={m.badges} source={m.source} />
         <span
-          className="cf-userwrap"
+          className={`cf-userwrap${cardOpen ? " cardopen" : ""}`}
           onMouseEnter={() => onHoverUser?.(m.source, m.username)}
         >
-          <span className="cf-user" style={{ color: nameColor }}>
+          <span
+            className="cf-user"
+            style={{ color: nameColor }}
+            role="button"
+            tabIndex={0}
+            aria-expanded={!!cardOpen}
+            onClick={onToggleCard}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggleCard?.())}
+          >
             {m.username}
           </span>
           <span className="cf-card" data-source={m.source} style={{ ["--src" as any]: m.color }}>

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { SourceLogo } from "./logos";
 import { fetchTwitchAvatar, type TwitchAuth } from "../lib/twitchAuth";
-import { useKickSession } from "../lib/kickAuth";
+import { useKickSession, fetchKickAvatar } from "../lib/kickAuth";
 
 type Props = {
   auth: TwitchAuth | null;
@@ -78,16 +78,18 @@ export function LoginMenu({
   // only the interim fallback while it loads. Kick: unavatar (no public API).
   const signedIn = !!auth || !!kick;
   const [twAvatar, setTwAvatar] = useState<string | null>(null);
+  const [kickAv, setKickAv] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     if (auth) fetchTwitchAvatar(auth).then((u) => { if (live) setTwAvatar(u); });
     else setTwAvatar(null);
+    if (!auth && kick?.username) fetchKickAvatar(kick.username).then((u) => { if (live) setKickAv(u); });
     return () => { live = false; };
-  }, [auth]);
+  }, [auth, kick?.username]);
   const avatarUrl = auth
     ? twAvatar || `https://unavatar.io/twitch/${auth.login}`
     : kick?.username
-    ? `https://unavatar.io/kick/${kick.username}`
+    ? kickAv || `https://unavatar.io/kick/${kick.username}`
     : "";
 
   return (

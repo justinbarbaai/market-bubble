@@ -1321,8 +1321,12 @@ const server = http.createServer(async (req, res) => {
       const clipRec = clipStatsFor(mbKey);
       const socials = publicSocials(mbKey);
       const wallets = publicWallets(mbKey);
+      // Real platform pfp too (cached 10 min hub-side). Kick's API is
+      // Cloudflare-fronted, so browsers can't fetch it — the hub is the way.
+      const prof = await fetchProfile(url.searchParams.get("source"), url.searchParams.get("username"), twitchCreds).catch(() => null);
       return json(200, {
         ok: true,
+        avatar: prof?.avatar ?? null,
         member: stats || clipRec || socials || wallets ? { ...(stats || {}), clips: clipRec, socials, wallets } : null,
       });
     }

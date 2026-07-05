@@ -150,22 +150,34 @@ export function ClipBoard() {
 function ClipperRow({ clipper: c, hubHttpUrl }: { clipper: Clipper; hubHttpUrl: string }) {
   const [open, setOpen] = useState(false);
   const [member, setMember] = useState<MemberCard | null | "loading">("loading");
+  const [hubAvatar, setHubAvatar] = useState<string | null>(null);
   const [copied, setCopied] = useState("");
 
-  useEffect(() => {
-    if (!open || member !== "loading") return;
+  const load = () => {
     fetch(`${hubHttpUrl}/member?source=${c.source}&username=${encodeURIComponent(c.name)}`)
       .then((r) => r.json())
-      .then((j) => setMember(j?.member ?? null))
+      .then((j) => { setMember(j?.member ?? null); setHubAvatar(j?.avatar ?? null); })
       .catch(() => setMember(null));
-  }, [open, member, hubHttpUrl, c.source, c.name]);
+  };
+  // Kick has no client-reachable avatar source — warm the row pfp (and the
+  // profile, so expanding is instant) via the hub. Other platforms lazy-load
+  // on expand; their row pfp comes straight from unavatar.
+  useEffect(() => {
+    if (c.source === "kick") load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.source, c.name]);
+  useEffect(() => {
+    if (open && member === "loading") load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const avatar =
-    c.source === "twitch"
+    hubAvatar ||
+    (c.source === "twitch"
       ? `https://unavatar.io/twitch/${encodeURIComponent(c.name)}`
       : c.source === "x"
       ? `https://unavatar.io/x/${encodeURIComponent(c.name)}`
-      : null;
+      : null);
 
   const copy = (id: string, text: string) => {
     navigator.clipboard?.writeText(text).then(() => {

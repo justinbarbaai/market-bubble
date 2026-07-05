@@ -1,4 +1,5 @@
 import { getTwitchToken } from "./viewers.js";
+import { kickGet } from "./kickContent.js";
 
 // Lazy per-chatter profile lookups for the hover card. Cached so repeated hovers
 // don't re-hit the API. Twitch resolves any login via Helix (avatar + account
@@ -18,6 +19,7 @@ export async function fetchProfile(source, name, twitchCreds = {}) {
   let data = null;
   try {
     if (source === "twitch") data = await fetchTwitchProfile(clean, twitchCreds);
+    else if (source === "kick") data = await fetchKickProfile(clean);
   } catch {
     data = null;
   }
@@ -42,5 +44,21 @@ async function fetchTwitchProfile(login, creds) {
     avatar: u.profile_image_url || null,
     createdAt: u.created_at || null,
     description: u.description || null,
+  };
+}
+
+// Kick: every account gets a channel page, and its v2 endpoint carries the
+// user's real profile_pic (Cloudflare-fronted → kickGet's browser-UA curl).
+async function fetchKickProfile(login) {
+  const j = await kickGet(`https://kick.com/api/v2/channels/${encodeURIComponent(login.toLowerCase())}`);
+  const u = j?.user;
+  if (!u) return null;
+  return {
+    source: "kick",
+    login: String(u.username || login).toLowerCase(),
+    displayName: u.username || login,
+    avatar: u.profile_pic || null,
+    createdAt: null, // v2 doesn't expose account age
+    description: u.bio || null,
   };
 }

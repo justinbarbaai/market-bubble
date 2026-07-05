@@ -35,11 +35,12 @@ export default function ProfilePage() {
 
   // The public member card (what chat sees on hover).
   const [member, setMember] = useState<MemberCard | null>(null);
+  const [hubAvatar, setHubAvatar] = useState<string | null>(null);
   const loadMember = useCallback(() => {
     if (!identity) { setMember(null); return; }
     fetch(`${hubHttpUrl}/member?source=${identity.source}&username=${encodeURIComponent(identity.username)}`)
       .then((r) => r.json())
-      .then((j) => setMember(j?.member ?? null))
+      .then((j) => { setMember(j?.member ?? null); setHubAvatar(j?.avatar ?? null); })
       .catch(() => {});
   }, [hubHttpUrl, identity?.source, identity?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadMember(); }, [loadMember]);
@@ -54,6 +55,7 @@ export default function ProfilePage() {
   }, [twitch]);
   const avatar = identity
     ? (identity.source === "twitch" && twAvatar) ||
+      hubAvatar ||
       `https://unavatar.io/${identity.source === "twitch" ? "twitch" : "kick"}/${encodeURIComponent(identity.username)}`
     : "";
 

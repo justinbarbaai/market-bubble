@@ -39,6 +39,26 @@ export function clearKickSession() {
   window.dispatchEvent(new Event(EVT));
 }
 
+// The Kick account's real pfp, resolved by the hub (Kick's API is Cloudflare-
+// fronted — browsers can't ask it directly). Day-cached per username.
+const KEY_AV = "mb.kickAvatar"; // { user, url, at }
+export async function fetchKickAvatar(username: string | null): Promise<string | null> {
+  if (!username || typeof window === "undefined") return null;
+  try {
+    const c = JSON.parse(localStorage.getItem(KEY_AV) || "null");
+    if (c?.user === username && c.url && Date.now() - c.at < 24 * 3600e3) return c.url;
+  } catch {}
+  try {
+    const r = await fetch(`${HUB_HTTP}/member?source=kick&username=${encodeURIComponent(username)}`);
+    const j = await r.json();
+    const url: string | null = j?.avatar || null;
+    if (url) localStorage.setItem(KEY_AV, JSON.stringify({ user: username, url, at: Date.now() }));
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export function startKickLogin() {
   // When the site is embedded same-origin (the /classic theater), break out to
   // the top window — Kick's OAuth pages refuse to render inside iframes.

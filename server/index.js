@@ -19,6 +19,7 @@ import { loadAccounts, flushAccounts, issueCode, verifyAccount, accountsFor, oem
 import { loadCockpit, flushCockpit, addEntry, addEntries, addSnapshot, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
 import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials, publicWallets, linkProfiles } from "./profiles.js";
 import { storeHealth } from "./store.js";
+import { startClipScanner, scanOneClip } from "./clipScan.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -325,6 +326,9 @@ setInterval(() => flushProfiles(), 20000).unref?.();
 // don't sign everyone out of Kick chat.
 await loadKickAuth();
 setInterval(() => flushKickAuth(), 20000).unref?.();
+// Clip-to-Earn automation: scan clips' real numbers, score for bot smell,
+// auto-approve the clean ones; suspects wait for a human with evidence attached.
+startClipScanner({ twitchCreds, onAward: applyClipAward, onChange: () => broadcastClips() });
 let saveTimer = null;
 function saveState() {
   if (saveTimer) clearTimeout(saveTimer);
@@ -1159,6 +1163,13 @@ const server = http.createServer(async (req, res) => {
         const out = submitClip({ url: j.url, by: mbKey, bySource: source, byName: username });
         if (out.ok) {
           broadcastClips();
+          // First scan right away — a clean clip with real reach hits the
+          // leaderboard in seconds; a suspect waits for a human with evidence.
+          setTimeout(() => {
+            scanOneClip(out.clip.id, out.clip, { twitchCreds, onAward: applyClipAward })
+              .then((did) => { if (did) broadcastClips(); })
+              .catch(() => {});
+          }, 3000);
           // Airtight loop: read the clip's real author via oEmbed and confirm it
           // matches one of the submitter's VERIFIED handles — so nobody can paste
           // a stranger's viral clip and claim it. (Only TikTok/YouTube expose the

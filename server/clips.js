@@ -188,6 +188,59 @@ export function setClipViews(id, views) {
   return true;
 }
 
+// ---- scanner support (Clip-to-Earn automation) ----
+
+// Clips the scanner should look at: anything pending, plus approved clips young
+// enough that late bot-juicing still matters. Raw refs (scanner mutates via the
+// helpers below).
+export function clipsForScan({ maxAgeDays = 14 } = {}) {
+  const cutoff = Date.now() - maxAgeDays * 86400e3;
+  return Object.values(clips).filter(
+    (c) => c.status === "pending" || (c.status === "approved" && c.createdAt > cutoff)
+  );
+}
+
+// Append a stat snapshot to the clip's history (bounded) + stamp the scan.
+export function recordClipScan(id, { views, likes, comments }) {
+  const c = clips[id];
+  if (!c) return null;
+  c.history = c.history || [];
+  c.history.push({ ts: Date.now(), views: views ?? null, likes: likes ?? null, comments: comments ?? null });
+  if (c.history.length > 60) c.history = c.history.slice(-60);
+  c.scannedAt = Date.now();
+  dirty = true;
+  return c;
+}
+
+// Attach / clear the bot-suspicion verdict (evidence shown in the Studio queue).
+export function setClipTrust(id, trust) {
+  const c = clips[id];
+  if (!c) return false;
+  c.trust = trust || null; // { score, reasons:[], flaggedAt } | null
+  dirty = true;
+  return true;
+}
+
+export function markAutoApproved(id) {
+  const c = clips[id];
+  if (c) {
+    c.autoApproved = true;
+    dirty = true;
+  }
+}
+
+// The member's typical reach (median views of their OTHER approved clips) — an
+// 800k "hit" from someone whose clips do 10k is a signal, not a miracle.
+export function authorMedianViews(by, excludeId) {
+  const mine = Object.values(clips).filter(
+    (c) => c.by === by && c.id !== excludeId && c.status === "approved" && c.views > 0
+  );
+  if (mine.length < 2) return null;
+  const s = mine.map((c) => c.views).sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
 function publicClip(c) {
   return {
     id: c.id,
@@ -250,9 +303,19 @@ export function clipsPayload({ all = false, limit = all ? 200 : TOP_N } = {}) {
   const visible = all ? list : list.filter((c) => c.status === "approved");
   // Ranking = pure views (the reach race). Featured is a badge, not a cheat to #1.
   visible.sort((a, b) => b.views - a.views || b.bubbles - a.bubbles || b.createdAt - a.createdAt);
+  // Operator payload carries the scanner's evidence; the public one never does.
+  const shape = all
+    ? (c) => ({
+        ...publicClip(c),
+        trust: c.trust ?? null,
+        scannedAt: c.scannedAt ?? null,
+        autoApproved: !!c.autoApproved,
+        lastStats: c.history?.length ? c.history[c.history.length - 1] : null,
+      })
+    : publicClip;
   return {
     type: "clips",
-    clips: visible.slice(0, limit).map(publicClip),
+    clips: visible.slice(0, limit).map(shape),
     clippers: clippersLeaderboard(),
     counts: {
       pending: list.filter((c) => c.status === "pending").length,

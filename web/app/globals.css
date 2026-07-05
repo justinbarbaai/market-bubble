@@ -9291,6 +9291,9 @@ body.panel-dragging iframe {
 
 /* studio: Clip-to-Earn review queue */
 .clipq-group { margin-top: 12px; }
+.clipq-scan { font-family: var(--mono); font-size: 10.5px; line-height: 1.5; }
+.clipq-scan.ok { color: var(--up); }
+.clipq-scan.bad { color: var(--down); }
 .clipq-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .clipq-count { background: var(--up); color: var(--bg); border-radius: 999px; padding: 0 6px; font-size: 10px; font-weight: 700; }
 .clipq-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 9px; margin-bottom: 6px; }

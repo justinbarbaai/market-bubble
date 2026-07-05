@@ -905,7 +905,32 @@ type StudioClip = {
   id: string; url: string; platform: string; by: string; bySource: string;
   status: string; featured: boolean; tier: string | null; views: number; bubbles: number;
   author?: string | null; attributed?: boolean;
+  // scanner evidence (operator payload only)
+  trust?: { score: number; reasons: string[]; flaggedAt: number | null } | null;
+  scannedAt?: number | null;
+  autoApproved?: boolean;
+  lastStats?: { ts: number; views: number | null; likes: number | null; comments: number | null } | null;
 };
+
+// Scanner evidence line for a clip row — flag reasons, or the clean read.
+function ClipScanInfo({ c }: { c: StudioClip }) {
+  if (!c.scannedAt) return null;
+  const flagged = !!c.trust?.flaggedAt;
+  const st = c.lastStats;
+  return (
+    <span className={`clipq-scan ${flagged ? "bad" : "ok"}`}>
+      {flagged ? (
+        <>⚠ bot-suspect (score {c.trust!.score}): {c.trust!.reasons.join(" · ")}</>
+      ) : (
+        <>
+          scanned ✓{st?.views != null ? ` · ${st.views.toLocaleString()} views` : ""}
+          {st?.likes != null ? ` · ${st.likes.toLocaleString()} likes` : ""}
+          {c.autoApproved ? " · auto-approved" : ""}
+        </>
+      )}
+    </span>
+  );
+}
 
 // Clip-to-Earn review queue — approve (with reach tier + views) / reject pending
 // clips, and feature the best. Approval pays Bubbles to the clipper's Floor balance.
@@ -1163,7 +1188,7 @@ function ClipQueue({ hubHttpUrl }: { hubHttpUrl: string }) {
     <section className="pollctl">
       <div className="pollctl-head">
         <b>Clip-to-Earn queue</b>
-        <span className="muted small">approve + tier submitted clips (B 250 · A 1,000 · S 4,000 Bubbles) · feature pays +5,000</span>
+        <span className="muted small">YouTube/X/Twitch/Kick clips auto-scan + auto-approve when clean — this queue is bot-suspects (evidence attached), TikTok/IG, and low-reach clips · B 250 · A 1,000 · S 4,000 ◆ · feature +5,000</span>
       </div>
 
       {!opKey && <p className="muted small pollctl-note">Set your operator key in the Bridge control above first.</p>}
@@ -1185,6 +1210,7 @@ function ClipQueue({ hubHttpUrl }: { hubHttpUrl: string }) {
                 ) : null}
               </span>
               <a href={c.url} target="_blank" rel="noreferrer" className="clipq-url">{c.url}</a>
+              <ClipScanInfo c={c} />
             </div>
             <div className="clipq-actions">
               <input
@@ -1208,6 +1234,7 @@ function ClipQueue({ hubHttpUrl }: { hubHttpUrl: string }) {
               <div className="clipq-meta">
                 <span className="muted small">{c.platform} · @{c.by} · tier {c.tier} · {c.views.toLocaleString()} views · {c.bubbles.toLocaleString()} ◆{c.featured ? " · ★ featured" : ""}</span>
                 <a href={c.url} target="_blank" rel="noreferrer" className="clipq-url">{c.url}</a>
+                <ClipScanInfo c={c} />
               </div>
               <div className="clipq-actions">
                 <button type="button" onClick={() => feature(c.id, !c.featured)}>{c.featured ? "Unfeature" : "Feature ★"}</button>

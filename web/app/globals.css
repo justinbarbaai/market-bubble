@@ -1191,15 +1191,8 @@ code {
 .cf-card[data-source="x"] {
   --src: var(--text);
 }
-/* the platform's color as a slim press rule across the top */
-.cf-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  border-radius: 6px 6px 0 0;
-  background: var(--src);
-}
+/* no colored strip — the platform reads from the logo + handle line; the card
+   stays plain paper like the rest of the site */
 .cf-card-head {
   display: flex;
   align-items: center;

@@ -17,7 +17,7 @@ import { loadFloor, flushFloor, pruneFloor, recordMessage, recordVote, floorPayl
 import { loadClips, flushClips, submitClip, decideClip, featureClip, clipsPayload, setAttribution, clipStatsFor } from "./clips.js";
 import { loadAccounts, flushAccounts, issueCode, verifyAccount, accountsFor, oembed, isVerifiedHandle, VERIFIABLE } from "./accounts.js";
 import { loadCockpit, flushCockpit, addEntry, addEntries, addSnapshot, updateEntry, deleteEntry, cockpitSummary } from "./cockpit.js";
-import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials, publicWallets } from "./profiles.js";
+import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials, publicWallets, linkProfiles } from "./profiles.js";
 import { storeHealth } from "./store.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
@@ -139,33 +139,35 @@ function ingestKeyOk(key) {
 // OAuth token and match its login. Kick: their hub session must resolve to the
 // claimed username. No proof → rejected.
 const twitchValidateCache = new Map(); // token -> { login, exp }
+// Whose Twitch token is this? → verified login (lowercase) or null.
+async function twitchLoginFor(twitchToken) {
+  const tok = String(twitchToken || "");
+  if (!tok) return null;
+  const hit = twitchValidateCache.get(tok);
+  if (hit && Date.now() < hit.exp) return hit.login || null;
+  try {
+    const r = await fetch("https://id.twitch.tv/oauth2/validate", {
+      headers: { Authorization: `OAuth ${tok}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    const login = r.ok ? String((await r.json()).login || "").toLowerCase() : "";
+    twitchValidateCache.set(tok, { login, exp: Date.now() + 5 * 60000 });
+    if (twitchValidateCache.size > 5000) twitchValidateCache.delete(twitchValidateCache.keys().next().value);
+    return login || null;
+  } catch {
+    return null;
+  }
+}
+// Whose Kick session is this? → verified username (lowercase) or null.
+function kickUserFor(kickSession) {
+  const info = kickSessionInfo(String(kickSession || ""));
+  return info.connected && info.username ? String(info.username).toLowerCase() : null;
+}
 async function verifyClaim(source, username, { twitchToken, kickSession } = {}) {
   const want = String(username || "").trim().toLowerCase();
   if (!want) return false;
-  if (source === "twitch") {
-    const tok = String(twitchToken || "");
-    if (!tok) return false;
-    const hit = twitchValidateCache.get(tok);
-    if (hit && Date.now() < hit.exp) return hit.login === want;
-    try {
-      const r = await fetch("https://id.twitch.tv/oauth2/validate", {
-        headers: { Authorization: `OAuth ${tok}` },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!r.ok) return false;
-      const j = await r.json();
-      const login = String(j.login || "").toLowerCase();
-      twitchValidateCache.set(tok, { login, exp: Date.now() + 5 * 60000 });
-      if (twitchValidateCache.size > 5000) twitchValidateCache.delete(twitchValidateCache.keys().next().value);
-      return login === want;
-    } catch {
-      return false;
-    }
-  }
-  if (source === "kick") {
-    const info = kickSessionInfo(String(kickSession || ""));
-    return !!info.connected && String(info.username || "").toLowerCase() === want;
-  }
+  if (source === "twitch") return (await twitchLoginFor(twitchToken)) === want;
+  if (source === "kick") return kickUserFor(kickSession) === want;
   return false; // no way to sign in as an X viewer on the site today
 }
 
@@ -1343,12 +1345,29 @@ const server = http.createServer(async (req, res) => {
         if (!mbKey) return json(200, { ok: false, error: "Sign in first." });
         const proven = await verifyClaim(j.source, j.username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
         if (!proven) return json(200, { ok: false, error: "Couldn't verify it's you — sign in again and retry." });
-        return json(200, setProfile(mbKey, {
+        const out = setProfile(mbKey, {
           source: String(j.source || ""),
           name: String(j.username || ""),
           wallets: j.wallets && typeof j.wallets === "object" ? j.wallets : {},
           socials: j.socials && typeof j.socials === "object" ? j.socials : {},
-        }));
+        });
+        // Signed into BOTH platforms? Both proofs verify → link the identities:
+        // one profile, shown on both platforms' chat cards.
+        if (out.ok) {
+          let otherKey = null;
+          if (j.source === "twitch" && j.kickSession) {
+            const ku = kickUserFor(j.kickSession);
+            if (ku) otherKey = `kick:${ku}`;
+          } else if (j.source === "kick" && j.twitchToken) {
+            const tl = await twitchLoginFor(j.twitchToken);
+            if (tl) otherKey = `twitch:${tl}`;
+          }
+          if (otherKey && otherKey !== mbKey) {
+            linkProfiles(mbKey, otherKey);
+            out.linked = otherKey;
+          }
+        }
+        return json(200, out);
       });
       return;
     }

@@ -295,6 +295,9 @@ export function ProfilePanel({
           <button className="clip-submit-btn" type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
           {msg && <span className={`clip-msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</span>}
         </div>
+        <p className="prof-note">
+          Signed into both Twitch <b>and</b> Kick? Saving links them — one profile, shown on your card in both chats.
+        </p>
       </form>
     </section>
   );

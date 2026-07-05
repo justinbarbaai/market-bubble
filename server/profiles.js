@@ -14,19 +14,47 @@ const PROFILES_FILE = new URL("./.mb-profiles.json", import.meta.url);
 
 // mbKey -> { source, name, wallets:{sol,eth,btc}, socials:{x,tiktok,instagram,discord,website}, updatedAt }
 let profiles = Object.create(null);
+// aliasKey -> primaryKey. One person, two chat identities: when a viewer proves
+// they own BOTH (signed into Twitch and Kick), the identities link — one
+// profile, shown on both platforms' chat cards. Bubbles stay per-identity.
+let aliases = Object.create(null);
 let dirty = false;
 
 export async function loadProfiles() {
   const raw = await loadDoc("mb:profiles", PROFILES_FILE);
   if (raw && typeof raw === "object" && raw.profiles) profiles = raw.profiles;
+  if (raw?.aliases && typeof raw.aliases === "object") aliases = raw.aliases;
 }
 export function flushProfiles() {
   if (!dirty) return;
   dirty = false;
-  saveDoc("mb:profiles", PROFILES_FILE, { profiles, savedAt: Date.now() }).catch((e) => {
+  saveDoc("mb:profiles", PROFILES_FILE, { profiles, aliases, savedAt: Date.now() }).catch((e) => {
     dirty = true;
     console.warn("[profiles] save failed:", e.message);
   });
+}
+
+// Follow an alias to the identity that actually holds the profile doc.
+const resolveKey = (mbKey) => aliases[mbKey] || mbKey;
+
+// Link `other` to `primary` (both PROVEN by the caller — never trust a claim).
+// Any profile `other` already had merges into primary (primary's fields win).
+export function linkProfiles(primary, other) {
+  primary = resolveKey(primary);
+  if (!primary || !other || other === primary) return;
+  const po = profiles[other];
+  if (po) {
+    const pp = profiles[primary] || (profiles[primary] = { wallets: {}, socials: {} });
+    pp.wallets = { ...(po.wallets || {}), ...(pp.wallets || {}) };
+    pp.socials = { ...(po.socials || {}), ...(pp.socials || {}) };
+    pp.updatedAt = Date.now();
+    delete profiles[other];
+  }
+  aliases[other] = primary;
+  // repoint anything that aliased to `other`
+  for (const k in aliases) if (aliases[k] === other) aliases[k] = primary;
+  delete aliases[primary]; // a primary must never itself be an alias
+  dirty = true;
 }
 
 // --- validation ---------------------------------------------------------------
@@ -66,6 +94,7 @@ function cleanWebsite(v) {
 // a member's other good fields still save.
 export function setProfile(mbKey, { source, name, wallets = {}, socials = {} } = {}) {
   if (!mbKey) return { ok: false, error: "Sign in first." };
+  mbKey = resolveKey(mbKey); // edits under a linked identity land on the one profile
   const p = profiles[mbKey] || { wallets: {}, socials: {} };
   p.source = String(source || p.source || "").slice(0, 20);
   if (name) p.name = String(name).trim().slice(0, 60);
@@ -123,7 +152,8 @@ export function publicProfile(p) {
 }
 
 export function getProfile(mbKey) {
-  return profiles[mbKey] ? publicProfile(profiles[mbKey]) : null;
+  const k = resolveKey(mbKey);
+  return profiles[k] ? publicProfile(profiles[k]) : null;
 }
 
 // Socials for the public member card in chat.

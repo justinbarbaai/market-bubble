@@ -219,6 +219,28 @@ export function clipStatsFor(by) {
   return approved > 0 ? { approved, featured, views } : null;
 }
 
+// Clippers leaderboard — the campaign ranks PEOPLE, not posts: approved clips
+// grouped by member, ranked by total views pulled. Clicking a clipper on the
+// site opens the member profile they already built.
+export function clippersLeaderboard(limit = 20) {
+  const agg = Object.create(null);
+  for (const id in clips) {
+    const c = clips[id];
+    if (c.status !== "approved") continue;
+    const a =
+      agg[c.by] ||
+      (agg[c.by] = { name: c.byName || c.by, source: c.bySource, clips: 0, views: 0, bubbles: 0, featured: 0 });
+    a.clips++;
+    a.views += c.views;
+    a.bubbles += c.bubbles;
+    if (c.featured) a.featured++;
+  }
+  return Object.values(agg)
+    .sort((x, y) => y.views - x.views || y.bubbles - x.bubbles)
+    .slice(0, limit)
+    .map((a, i) => ({ rank: i + 1, ...a }));
+}
+
 // The public wall is the campaign leaderboard: the TOP 10 approved clips RANKED
 // BY VIEWS (most reach wins). `all` (operator) returns the full list incl.
 // pending/rejected for the Studio review queue.
@@ -231,6 +253,7 @@ export function clipsPayload({ all = false, limit = all ? 200 : TOP_N } = {}) {
   return {
     type: "clips",
     clips: visible.slice(0, limit).map(publicClip),
+    clippers: clippersLeaderboard(),
     counts: {
       pending: list.filter((c) => c.status === "pending").length,
       approved: list.filter((c) => c.status === "approved").length,

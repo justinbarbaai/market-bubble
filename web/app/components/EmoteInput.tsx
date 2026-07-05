@@ -106,6 +106,13 @@ export function EmoteInput({
     inputRef.current?.focus();
   };
 
+  // Sending puts the menu away — you shouldn't have to close it by hand.
+  const submit = () => {
+    setPickerOpen(false);
+    setPickerQuery("");
+    onSubmit();
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (suggestions.length) {
       if (e.key === "ArrowDown") {
@@ -130,7 +137,7 @@ export function EmoteInput({
         return;
       }
     }
-    if (e.key === "Enter") onSubmit();
+    if (e.key === "Enter") submit();
   };
 
   // Search across every section → a flat result list.
@@ -299,7 +306,7 @@ export function EmoteInput({
             ☺
           </button>
         )}
-        <button onClick={onSubmit} disabled={disabled}>
+        <button onClick={submit} disabled={disabled}>
           Send
         </button>
       </div>

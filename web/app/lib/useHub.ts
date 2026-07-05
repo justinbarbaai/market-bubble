@@ -157,8 +157,20 @@ export interface Clip {
   attributed?: boolean; // author matches a verified handle of the submitter
   createdAt: number;
 }
+// A member on the clippers leaderboard — approved clips grouped per person.
+export interface Clipper {
+  rank: number;
+  name: string;
+  source: string;
+  clips: number;
+  views: number;
+  bubbles: number;
+  featured: number;
+}
+
 export interface ClipsState {
   clips: Clip[];
+  clippers: Clipper[];
   counts: { pending: number; approved: number };
 }
 
@@ -357,7 +369,7 @@ export function useHub({ pushChannels = null, privateScope = false }: UseHubArgs
       } else if (msg.type === "floor") {
         setFloor(msg.floor ?? null);
       } else if (msg.type === "clips") {
-        setClips({ clips: msg.clips ?? [], counts: msg.counts ?? { pending: 0, approved: 0 } });
+        setClips({ clips: msg.clips ?? [], clippers: msg.clippers ?? [], counts: msg.counts ?? { pending: 0, approved: 0 } });
       }
     };
 

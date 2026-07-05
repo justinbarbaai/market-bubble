@@ -13,7 +13,7 @@ const TABS = [
   { href: "/", label: "Home", icon: HomeIcon, view: "lobby" as MBView },
   { href: "/market", label: "Market", icon: MarketIcon },
   { href: "/", label: "Live", icon: LiveIcon, hero: true, view: "live" as MBView },
-  { href: "/news", label: "News", icon: NewsIcon },
+  { href: "/clips", label: "Clips", icon: ClipsIcon },
   { href: "/content", label: "Content", icon: ContentIcon },
 ];
 
@@ -101,6 +101,17 @@ function LiveIcon() {
     </svg>
   );
 }
+function ClipsIcon() {
+  // scissors — clip the show
+  return (
+    <svg {...P}>
+      <circle cx="6" cy="6.5" r="2.5" />
+      <circle cx="6" cy="17.5" r="2.5" />
+      <path d="M8.2 8.1 20 19M8.2 15.9 20 5M13.2 12.9l1.6 1.5" />
+    </svg>
+  );
+}
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function NewsIcon() {
   return (
     <svg {...P}>

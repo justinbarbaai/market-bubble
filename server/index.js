@@ -173,7 +173,7 @@ async function verifyClaim(source, username, { twitchToken, kickSession } = {}) 
 
 // Tight budget for identity-claiming writes (profile/accounts/clip-submit):
 // 12 burst, ~12/min sustained — humans never notice, floods bounce.
-const writeLimited = (req) => rateLimited(clientIp(req), 12, 0.2);
+const writeLimited = (req) => rateLimited("w:" + clientIp(req), 12, 0.2); // own bucket — the global limiter must not drain it
 // X live-viewer counts pushed by the extension — ONE entry per broadcast tab
 // (Banks / Ansem / Market Bubble), keyed by host. X killed the public endpoints,
 // so these pushes are the only accurate source. Combined into one bar number +

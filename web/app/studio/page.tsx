@@ -257,6 +257,7 @@ function ControlPanel() {
         <>
           <PollControl hubHttpUrl={hubHttpUrl} poll={poll} />
           <ClipQueue hubHttpUrl={hubHttpUrl} />
+          <QuestsControl hubHttpUrl={hubHttpUrl} />
           <Roster hubHttpUrl={hubHttpUrl} />
         </>
       )}
@@ -1326,6 +1327,157 @@ function Roster({ hubHttpUrl }: { hubHttpUrl: string }) {
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+// ---- Quests control: create quests, hand-award IRL ones, export the airdrop
+// roster (verified wallets + weights) for the show's own wallet / Bullpen. ----
+type StudioQuest = {
+  id: string; type: "hold" | "interact" | "manual"; title: string; desc: string;
+  mint: string | null; minAmount: number; days: number; programId: string | null;
+  protocol: string; link: string | null; reward: number; weight: number; active: boolean;
+};
+type QuestRosterRow = { key: string; name: string; source: string; wallet: string; verified: boolean; weight: number; done: string[] };
+
+function QuestsControl({ hubHttpUrl }: { hubHttpUrl: string }) {
+  const [opKey, setOpKey] = useState("");
+  const [quests, setQuests] = useState<StudioQuest[]>([]);
+  const [roster, setRoster] = useState<QuestRosterRow[]>([]);
+  const [note, setNote] = useState("");
+  const [copied, setCopied] = useState(false);
+  // new-quest form
+  const [qType, setQType] = useState<"hold" | "interact" | "manual">("interact");
+  const [f, setF] = useState<Record<string, string>>({ title: "", desc: "", link: "", mint: "", minAmount: "", days: "3", programId: "", protocol: "", reward: "750", weight: "1" });
+  // manual award
+  const [awardQuest, setAwardQuest] = useState("");
+  const [awardSrc, setAwardSrc] = useState<"twitch" | "kick">("twitch");
+  const [awardUser, setAwardUser] = useState("");
+
+  useEffect(() => { try { setOpKey(localStorage.getItem("mb.operatorKey") || ""); } catch {} }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const q = await fetch(`${hubHttpUrl}/quests`, { cache: "no-store" }).then((r) => r.json());
+      setQuests(q.quests ?? []);
+    } catch {}
+    if (!opKey) return;
+    try {
+      const r = await fetch(`${hubHttpUrl}/quests/roster?key=${encodeURIComponent(opKey)}`, { cache: "no-store" }).then((r) => r.json());
+      setRoster(r.roster ?? []);
+    } catch {}
+  }, [hubHttpUrl, opKey]);
+  useEffect(() => { load(); const t = setInterval(load, 20000); return () => clearInterval(t); }, [load]);
+
+  const post = async (path: string, body: object) => {
+    const r = await fetch(`${hubHttpUrl}/quests/${path}?key=${encodeURIComponent(opKey)}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!j.ok && j.error) setNote(j.error); else setNote("");
+    load();
+    return j;
+  };
+
+  const createQuest = () =>
+    post("upsert", { type: qType, title: f.title, desc: f.desc, link: f.link, mint: f.mint, minAmount: f.minAmount, days: f.days, programId: f.programId, protocol: f.protocol, reward: f.reward, weight: f.weight })
+      .then((j) => { if (j.ok) setF((v) => ({ ...v, title: "", desc: "" })); });
+
+  const copyCsv = () => {
+    const csv = ["name,source,wallet,verified,weight,quests_done",
+      ...roster.map((r) => `${r.name},${r.source},${r.wallet},${r.verified ? "yes" : "no"},${r.weight},"${r.done.join("; ")}"`)].join("\n");
+    navigator.clipboard?.writeText(csv).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
+  };
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setF((v) => ({ ...v, [k]: e.target.value }));
+  const manualQuests = quests.filter((q) => q.type === "manual");
+
+  return (
+    <section className="pollctl">
+      <div className="pollctl-head">
+        <b>Quests &amp; airdrop roster</b>
+        <span className="muted small">on-chain quests (hold / use protocols) auto-verify from members&apos; proven wallets · roster export feeds the show&apos;s airdrop wallet or Bullpen</span>
+      </div>
+      {!opKey && <p className="muted small pollctl-note">Set your operator key in the X Capture tab first.</p>}
+      {note && <p className="muted small pollctl-note">{note}</p>}
+
+      <div className="clipq-group">
+        <div className="clipq-label">Live quests</div>
+        {quests.length === 0 ? <p className="muted small">None yet.</p> : quests.map((q) => (
+          <div key={q.id} className="clipq-row">
+            <div className="clipq-meta">
+              <span className="muted small"><b>{q.type.toUpperCase()}</b> · {q.title} · {q.reward.toLocaleString()} ◆ · +{q.weight} weight</span>
+              {q.type === "hold" && <span className="clipq-scan ok">hold ≥{q.minAmount} {q.mint ? "of mint " + q.mint.slice(0, 6) + "…" : "SOL"} for {q.days}d</span>}
+              {q.type === "interact" && <span className="clipq-scan ok">tx touching {q.protocol || q.programId?.slice(0, 8) + "…"}</span>}
+            </div>
+            <div className="clipq-actions">
+              <button type="button" onClick={() => post("upsert", { id: q.id, active: !q.active })}>{q.active ? "Pause" : "Resume"}</button>
+              <button type="button" className="clipq-reject" onClick={() => post("delete", { id: q.id })}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="clipq-group">
+        <div className="clipq-label">New quest</div>
+        <div className="qc-form">
+          <select className="clip-acc-select" value={qType} onChange={(e) => setQType(e.target.value as typeof qType)}>
+            <option value="interact">interact — use a protocol</option>
+            <option value="hold">hold — balance streak</option>
+            <option value="manual">manual — IRL / quality posts</option>
+          </select>
+          <input className="clip-input" placeholder="title" value={f.title} onChange={set("title")} />
+          <input className="clip-input" placeholder="description" value={f.desc} onChange={set("desc")} />
+          <input className="clip-input" placeholder="link (https://app.bullpen.fi/…?ref=blknoiz06)" value={f.link} onChange={set("link")} />
+          {qType === "hold" && (<>
+            <input className="clip-input" placeholder="mint address (blank = SOL)" value={f.mint} onChange={set("mint")} />
+            <input className="clip-input" placeholder="min amount" value={f.minAmount} onChange={set("minAmount")} />
+            <input className="clip-input" placeholder="days" value={f.days} onChange={set("days")} />
+          </>)}
+          {qType === "interact" && (<>
+            <input className="clip-input" placeholder="program id (e.g. Jupiter v6)" value={f.programId} onChange={set("programId")} />
+            <input className="clip-input" placeholder="protocol name" value={f.protocol} onChange={set("protocol")} />
+          </>)}
+          <input className="clip-input" placeholder="reward ◆" value={f.reward} onChange={set("reward")} />
+          <input className="clip-input" placeholder="airdrop weight" value={f.weight} onChange={set("weight")} />
+          <button type="button" className="clip-submit-btn" onClick={createQuest} disabled={!f.title.trim()}>Create quest</button>
+        </div>
+      </div>
+
+      {manualQuests.length > 0 && (
+        <div className="clipq-group">
+          <div className="clipq-label">Hand-award (IRL / quality posts)</div>
+          <div className="qc-form">
+            <select className="clip-acc-select" value={awardQuest} onChange={(e) => setAwardQuest(e.target.value)}>
+              <option value="">pick quest…</option>
+              {manualQuests.map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}
+            </select>
+            <select className="clip-acc-select" value={awardSrc} onChange={(e) => setAwardSrc(e.target.value as "twitch" | "kick")}>
+              <option value="twitch">twitch</option>
+              <option value="kick">kick</option>
+            </select>
+            <input className="clip-input" placeholder="username" value={awardUser} onChange={(e) => setAwardUser(e.target.value)} />
+            <button type="button" className="clip-submit-btn ghost" disabled={!awardQuest || !awardUser.trim()}
+              onClick={() => post("award", { questId: awardQuest, source: awardSrc, username: awardUser.trim() }).then((j) => { if (j.ok) setAwardUser(""); })}>
+              Award
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="clipq-group">
+        <div className="clipq-label">Airdrop roster {roster.length > 0 && <span className="clipq-count">{roster.length}</span>}
+          {roster.length > 0 && <button type="button" className="clip-acc-cancel" onClick={copyCsv}>{copied ? "copied ✓" : "copy CSV"}</button>}
+        </div>
+        {roster.length === 0 ? <p className="muted small">No verified wallets yet.</p> : roster.slice(0, 30).map((r, i) => (
+          <div key={r.key} className="clipq-row">
+            <div className="clipq-meta">
+              <span className="muted small">{String(i + 1).padStart(2, "0")} · <b>{r.name}</b> · {r.source} · weight <b>{r.weight}</b>{r.done.length ? ` · ${r.done.length} quest${r.done.length === 1 ? "" : "s"}` : ""}</span>
+              <span className="clipq-url">{r.wallet}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );

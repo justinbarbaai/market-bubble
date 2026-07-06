@@ -23,6 +23,7 @@ const NAV = [
   { href: "/news", label: "News" },
   { href: "/content", label: "Content" },
   { href: "/clips", label: "Clips" },
+  { href: "/quests", label: "Quests" },
 ];
 
 /**

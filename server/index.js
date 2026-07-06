@@ -20,6 +20,8 @@ import { loadCockpit, flushCockpit, addEntry, addEntries, addSnapshot, updateEnt
 import { loadProfiles, flushProfiles, setProfile, getProfile, profileEntries, publicSocials, publicWallets, linkProfiles } from "./profiles.js";
 import { storeHealth } from "./store.js";
 import { startClipScanner, scanOneClip } from "./clipScan.js";
+import { loadQuests, flushQuests, listQuests, upsertQuest, deleteQuest, setQuestWallet, questStateFor, evaluateMember, awardManualQuest, questRoster, membersForSweep } from "./quests.js";
+import { isSolAddress, verifyWalletSignature } from "./sources/solana.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -329,6 +331,44 @@ setInterval(() => flushKickAuth(), 20000).unref?.();
 // Clip-to-Earn automation: scan clips' real numbers, score for bot smell,
 // auto-approve the clean ones; suspects wait for a human with evidence attached.
 startClipScanner({ twitchCreds, onAward: applyClipAward, onChange: () => broadcastClips() });
+// Quests: on-chain checks (hold streaks / protocol interactions) for members
+// with verified wallets — Bubbles + airdrop weight, evaluated on a slow sweep.
+await loadQuests();
+setInterval(() => flushQuests(), 20000).unref?.();
+// First boot: seed two real starter quests so the page never launches empty.
+// (Operator edits/replaces these in Studio.)
+if (listQuests({ activeOnly: false }).length === 0) {
+  upsertQuest({
+    type: "manual",
+    title: "Get set up on Bullpen",
+    desc: "Make your first trade on Bullpen (Ansem's pick for claims + trading). Awarded by the show while we wire automatic verification.",
+    link: "https://app.bullpen.fi/claim?ref=blknoiz06",
+    protocol: "Bullpen",
+    reward: 1000,
+    weight: 2,
+  });
+  upsertQuest({
+    type: "hold",
+    title: "Diamond hands · hold 100 $ANSEM for 3 days",
+    desc: "Keep at least 100 $ANSEM in your verified wallet for 3 days straight. Checked daily — streaks reset if you dip. Longer holds = more airdrop weight quests to come.",
+    // $ANSEM (The Black Bull) — the real pump.fun mint, verified by live DEX
+    // volume, NOT from memory. Operator-editable in Studio.
+    mint: "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump",
+    minAmount: 100,
+    days: 3,
+    reward: 750,
+    weight: 1,
+  });
+}
+setInterval(async () => {
+  for (const key of membersForSweep()) {
+    try {
+      const awards = await evaluateMember(key, { force: true });
+      for (const a of awards) applyClipAward(a);
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1500)); // be gentle to the free RPC
+  }
+}, 6 * 3600e3).unref?.();
 let saveTimer = null;
 function saveState() {
   if (saveTimer) clearTimeout(saveTimer);
@@ -1390,6 +1430,91 @@ const server = http.createServer(async (req, res) => {
     return json(404, { ok: false, error: "unknown profile route" });
   }
 
+  // ---- Quests: on-chain actions → Bubbles + airdrop weight ----
+  if (url.pathname.startsWith("/quests")) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, x-op-key",
+      "Content-Type": "application/json",
+    };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    const json = (code, obj) => { res.writeHead(code, cors); res.end(JSON.stringify(obj)); };
+    const mbKeyOf = (source, username) =>
+      ["twitch", "kick"].includes(String(source)) && String(username || "").trim()
+        ? `${source}:${String(username).trim().toLowerCase()}`
+        : null;
+    const readBody = () =>
+      new Promise((resolve) => {
+        let body = "";
+        req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+        req.on("end", () => { try { resolve(JSON.parse(body || "{}")); } catch { resolve({}); } });
+      });
+
+    // Public: quest list (+ the caller's own progress when identified).
+    if (url.pathname === "/quests" && req.method === "GET") {
+      const mbKey = mbKeyOf(url.searchParams.get("source"), url.searchParams.get("username"));
+      return json(200, { quests: listQuests(), state: mbKey ? questStateFor(mbKey) : null });
+    }
+
+    // Link + PROVE a wallet: identity proof + an ed25519 signature over a fresh
+    // message naming the address and the identity. A signature, never a tx.
+    if (url.pathname === "/quests/wallet" && req.method === "POST") {
+      if (writeLimited(req)) return json(429, { ok: false, error: "Slow down — try again in a minute." });
+      const j = await readBody();
+      const mbKey = mbKeyOf(j.source, j.username);
+      if (!mbKey) return json(200, { ok: false, error: "Sign in first." });
+      const proven = await verifyClaim(j.source, j.username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
+      if (!proven) return json(200, { ok: false, error: "Couldn't verify it's you — sign in again and retry." });
+      const address = String(j.address || "").trim();
+      if (!isSolAddress(address)) return json(200, { ok: false, error: "That's not a Solana address." });
+      const message = String(j.message || "");
+      const m = message.match(/^Market Bubble quests — I own (\S+) as (\S+) @ (\d+)$/);
+      if (!m || m[1] !== address || m[2] !== mbKey || Math.abs(Date.now() - Number(m[3])) > 10 * 60000)
+        return json(200, { ok: false, error: "Stale or mismatched signature message — retry from the quests page." });
+      if (!verifyWalletSignature(address, message, String(j.signature || "")))
+        return json(200, { ok: false, error: "Signature didn't verify — sign with the wallet that owns this address." });
+      const wallet = setQuestWallet(mbKey, { name: String(j.username), source: String(j.source), address, verified: true });
+      // mirror into their profile so the giveaway address + quest wallet agree
+      setProfile(mbKey, { source: String(j.source), name: String(j.username), wallets: { sol: address }, socials: {} });
+      return json(200, { ok: true, wallet });
+    }
+
+    // Member asks "check my quests now" (sweep also runs on its own).
+    if (url.pathname === "/quests/check" && req.method === "POST") {
+      if (writeLimited(req)) return json(429, { ok: false, error: "Slow down — try again in a minute." });
+      const j = await readBody();
+      const mbKey = mbKeyOf(j.source, j.username);
+      if (!mbKey) return json(200, { ok: false, error: "Sign in first." });
+      const proven = await verifyClaim(j.source, j.username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
+      if (!proven) return json(200, { ok: false, error: "Couldn't verify it's you — sign in again and retry." });
+      const awards = await evaluateMember(mbKey);
+      for (const a of awards) applyClipAward(a);
+      return json(200, { ok: true, state: questStateFor(mbKey), awarded: awards.reduce((s, a) => s + a.amount, 0) });
+    }
+
+    // Everything below is operator-only.
+    if (!operatorKeyOk(url.searchParams.get("key") || req.headers["x-op-key"]))
+      return json(401, { ok: false, error: "bad operator key" });
+
+    if (url.pathname === "/quests/roster") return json(200, { roster: questRoster() });
+    if (url.pathname === "/quests/upsert" && req.method === "POST") return json(200, upsertQuest(await readBody()));
+    if (url.pathname === "/quests/delete" && req.method === "POST") {
+      const j = await readBody();
+      return json(200, { ok: deleteQuest(String(j.id || "")) });
+    }
+    if (url.pathname === "/quests/award" && req.method === "POST") {
+      const j = await readBody();
+      const mbKey = mbKeyOf(j.source, j.username);
+      if (!mbKey) return json(200, { ok: false, error: "bad identity" });
+      const out = awardManualQuest(mbKey, String(j.questId || ""), { name: String(j.username || ""), source: String(j.source || "") });
+      if (out.ok && out.award) applyClipAward(out.award);
+      return json(200, out);
+    }
+
+    return json(404, { ok: false, error: "unknown quests route" });
+  }
+
   // ---- Distribution Cockpit (operator-only ROI ledger) ----
   if (url.pathname.startsWith("/cockpit")) {
     const cors = {
@@ -1692,6 +1817,7 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
     flushCockpit();
     flushProfiles();
     flushKickAuth();
+    flushQuests();
     stopSources();
     wss.close();
     server.close(() => process.exit(0));

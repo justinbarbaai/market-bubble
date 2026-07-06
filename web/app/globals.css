@@ -9171,6 +9171,29 @@ body.panel-dragging iframe {
   .clip-profile-link { margin-left: 0; display: block; margin-top: 4px; }
 }
 
+/* Quests (/quests + studio control) */
+.q-walletrow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.q-walletlabel { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.q-walletlabel b { color: var(--text); }
+.q-weight { color: var(--up) !important; }
+.q-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.q-card { border: 1px solid var(--border-2); border-radius: 12px; padding: 12px 14px; background: color-mix(in srgb, var(--text) 2%, transparent); }
+.q-card.done { border-color: color-mix(in srgb, var(--up) 45%, var(--border-2)); }
+.q-card-main { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.q-type { font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--text) 30%, transparent); color: var(--muted); }
+.q-title { font-family: var(--serif); font-size: 16px; font-weight: 700; }
+.q-reward { margin-left: auto; font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--up); }
+.q-reward i { font-style: normal; color: var(--muted); font-weight: 600; font-size: 10.5px; }
+.q-desc { margin: 6px 0 0; font-size: 12.5px; color: color-mix(in srgb, var(--text) 75%, transparent); }
+.q-link { display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--text); text-decoration: none; border: 1px solid color-mix(in srgb, var(--text) 26%, transparent); border-radius: 999px; padding: 3px 10px; }
+.q-link:hover { border-color: var(--text); }
+.q-progress { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.q-progress b { color: var(--text); }
+.q-done { color: var(--up); font-weight: 700; }
+.qc-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.qc-form .clip-input { flex: 1 1 180px; }
+@media (max-width: 640px) { .q-reward { margin-left: 0; width: 100%; } }
+
 /* Payout + socials (viewer form on /clips) */
 .clip-prof { margin-top: 16px; padding: 14px 16px; border: 1px solid var(--border-2); border-radius: 12px; background: color-mix(in srgb, var(--text) 2.5%, transparent); }
 .prof-group { margin-top: 12px; }

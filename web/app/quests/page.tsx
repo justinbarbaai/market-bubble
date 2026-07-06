@@ -55,15 +55,20 @@ export default function QuestsPage() {
   }, [hubHttpUrl, identity]);
   useEffect(() => { load(); }, [load]);
 
-  // Phantom: connect + sign ONE message proving wallet ownership. A signature,
-  // not a transaction — it can't move anything.
+  // Any injected Solana wallet (Phantom / Solflare / Backpack / …): connect +
+  // sign ONE message proving ownership. A signature, not a transaction.
   async function linkWallet() {
     if (!identity || busy) return;
     setMsg(null);
-    const provider = (window as unknown as { phantom?: { solana?: PhantomProvider }; solana?: PhantomProvider });
-    const phantom = provider.phantom?.solana ?? provider.solana;
-    if (!phantom?.signMessage) {
-      setMsg({ ok: false, text: "No Solana wallet found — install Phantom (phantom.com) and retry on desktop." });
+    const w = window as unknown as {
+      phantom?: { solana?: PhantomProvider };
+      solflare?: PhantomProvider;
+      backpack?: PhantomProvider;
+      solana?: PhantomProvider;
+    };
+    const phantom = [w.phantom?.solana, w.solflare, w.backpack, w.solana].find((p) => p?.signMessage);
+    if (!phantom) {
+      setMsg({ ok: false, text: "No Solana wallet extension found — Phantom, Solflare, or Backpack on desktop all work." });
       return;
     }
     setBusy(true);
@@ -123,7 +128,7 @@ export default function QuestsPage() {
             <h2 className="clip-rules-title">Prove it. Do it. Get weighted.</h2>
           </div>
           <ol className="clip-steps">
-            <li><b>1.</b> Link the wallet you own — one signature, never a transaction.</li>
+            <li><b>1.</b> Verify the wallet you hold in — one signature (Phantom, Solflare, Backpack…), never a transaction.</li>
             <li><b>2.</b> Complete quests: hold, try protocols, clip the show, show up.</li>
             <li><b>3.</b> Each quest pays <b>Bubbles</b> now and adds <b>airdrop weight</b> for when the show sends rewards.</li>
           </ol>
@@ -153,9 +158,11 @@ export default function QuestsPage() {
             </div>
           ) : (
             <div className="q-walletrow">
-              <span className="q-walletlabel">Link the wallet you own to start earning airdrop weight.</span>
+              <span className="q-walletlabel">
+                Verify the wallet <b>where you hold your $ANSEM</b> — hold quests check that address.
+              </span>
               <button className="clip-submit-btn" onClick={linkWallet} disabled={busy}>
-                {busy ? "Waiting for wallet…" : "Verify wallet (Phantom)"}
+                {busy ? "Waiting for wallet…" : "Verify wallet"}
               </button>
             </div>
           )}

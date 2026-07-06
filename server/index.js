@@ -22,6 +22,7 @@ import { storeHealth } from "./store.js";
 import { startClipScanner, scanOneClip } from "./clipScan.js";
 import { loadQuests, flushQuests, listQuests, upsertQuest, deleteQuest, setQuestWallet, questStateFor, evaluateMember, awardManualQuest, questRoster, membersForSweep } from "./quests.js";
 import { isSolAddress, verifyWalletSignature } from "./sources/solana.js";
+import { loadBagwork, flushBagwork, submitBagwork, rescanBagwork, bagworkFor, bagworkLeaderboard, bagworkWeightFor } from "./bagwork.js";
 import { fetchKickContent } from "./sources/kickContent.js";
 import { fetchTweets } from "./sources/tweets.js";
 import { fetchMarkets } from "./sources/markets.js";
@@ -335,6 +336,10 @@ startClipScanner({ twitchCreds, onAward: applyClipAward, onChange: () => broadca
 // with verified wallets — Bubbles + airdrop weight, evaluated on a slow sweep.
 await loadQuests();
 setInterval(() => flushQuests(), 20000).unref?.();
+// Bagwork ($ANSEM posts on X): engagement refresh rides the same slow cadence.
+await loadBagwork();
+setInterval(() => flushBagwork(), 20000).unref?.();
+setInterval(() => rescanBagwork().catch(() => {}), 6 * 3600e3).unref?.();
 // First boot: seed two real starter quests so the page never launches empty.
 // (Operator edits/replaces these in Studio.)
 if (listQuests({ activeOnly: false }).length === 0) {
@@ -1375,10 +1380,12 @@ const server = http.createServer(async (req, res) => {
       // Real platform pfp too (cached 10 min hub-side). Kick's API is
       // Cloudflare-fronted, so browsers can't fetch it — the hub is the way.
       const prof = await fetchProfile(url.searchParams.get("source"), url.searchParams.get("username"), twitchCreds).catch(() => null);
+      const bw = bagworkFor(mbKey);
+      const bagwork = bw ? { posts: bw.count, score: bw.score } : null;
       return json(200, {
         ok: true,
         avatar: prof?.avatar ?? null,
-        member: stats || clipRec || socials || wallets ? { ...(stats || {}), clips: clipRec, socials, wallets } : null,
+        member: stats || clipRec || socials || wallets || bagwork ? { ...(stats || {}), clips: clipRec, socials, wallets, bagwork } : null,
       });
     }
 
@@ -1428,6 +1435,46 @@ const server = http.createServer(async (req, res) => {
     }
 
     return json(404, { ok: false, error: "unknown profile route" });
+  }
+
+  // ---- Bagwork: verified members' $ANSEM posts on X ----
+  if (url.pathname.startsWith("/bagwork")) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type",
+      "Content-Type": "application/json",
+    };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+    const json = (code, obj) => { res.writeHead(code, cors); res.end(JSON.stringify(obj)); };
+    const mbKeyOf = (source, username) =>
+      ["twitch", "kick"].includes(String(source)) && String(username || "").trim()
+        ? `${source}:${String(username).trim().toLowerCase()}`
+        : null;
+
+    // Public: leaderboard (+ the caller's own posts when identified).
+    if (url.pathname === "/bagwork" && req.method === "GET") {
+      const mbKey = mbKeyOf(url.searchParams.get("source"), url.searchParams.get("username"));
+      return json(200, { leaderboard: bagworkLeaderboard(), mine: mbKey ? bagworkFor(mbKey) : null });
+    }
+
+    // Submit your $ANSEM post — author must be YOUR verified X handle.
+    if (url.pathname === "/bagwork/submit" && req.method === "POST") {
+      if (writeLimited(req)) return json(429, { ok: false, error: "Slow down — try again in a minute." });
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 1e5) req.destroy(); });
+      req.on("end", async () => {
+        let j = {}; try { j = JSON.parse(body || "{}"); } catch {}
+        const mbKey = mbKeyOf(j.source, j.username);
+        if (!mbKey) return json(200, { ok: false, error: "Sign in first." });
+        const proven = await verifyClaim(j.source, j.username, { twitchToken: j.twitchToken, kickSession: j.kickSession });
+        if (!proven) return json(200, { ok: false, error: "Couldn't verify it's you — sign in again and retry." });
+        return json(200, await submitBagwork({ url: j.url, mbKey, byName: String(j.username), bySource: String(j.source) }));
+      });
+      return;
+    }
+
+    return json(404, { ok: false, error: "unknown bagwork route" });
   }
 
   // ---- Quests: on-chain actions → Bubbles + airdrop weight ----
@@ -1497,7 +1544,15 @@ const server = http.createServer(async (req, res) => {
     if (!operatorKeyOk(url.searchParams.get("key") || req.headers["x-op-key"]))
       return json(401, { ok: false, error: "bad operator key" });
 
-    if (url.pathname === "/quests/roster") return json(200, { roster: questRoster() });
+    if (url.pathname === "/quests/roster") {
+      // quest weight + bagwork weight = the full airdrop math in one export
+      const roster = questRoster().map((r) => {
+        const bw = bagworkFor(r.key);
+        const bagWeight = bagworkWeightFor(r.key);
+        return { ...r, bagworkScore: bw?.score ?? 0, bagworkPosts: bw?.count ?? 0, totalWeight: r.weight + bagWeight };
+      }).sort((a, b) => b.totalWeight - a.totalWeight);
+      return json(200, { roster });
+    }
     if (url.pathname === "/quests/upsert" && req.method === "POST") return json(200, upsertQuest(await readBody()));
     if (url.pathname === "/quests/delete" && req.method === "POST") {
       const j = await readBody();
@@ -1677,7 +1732,9 @@ wss.on("connection", (ws, req) => {
       const clipRec = clipStatsFor(mbKey);
       const socials = publicSocials(mbKey);
       const wallets = publicWallets(mbKey);
-      const member = stats || clipRec || socials || wallets ? { ...(stats || {}), clips: clipRec, socials, wallets } : null;
+      const bw = bagworkFor(mbKey);
+      const bagwork = bw ? { posts: bw.count, score: bw.score } : null;
+      const member = stats || clipRec || socials || wallets || bagwork ? { ...(stats || {}), clips: clipRec, socials, wallets, bagwork } : null;
       fetchProfile(source, name, twitchCreds)
         .then((data) => {
           if (ws.readyState === ws.OPEN) {
@@ -1818,6 +1875,7 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
     flushProfiles();
     flushKickAuth();
     flushQuests();
+    flushBagwork();
     stopSources();
     wss.close();
     server.close(() => process.exit(0));

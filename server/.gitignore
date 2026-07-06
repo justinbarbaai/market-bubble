@@ -8,3 +8,5 @@ node_modules/
 .mb-cockpit.json
 .mb-profiles.json
 .mb-kick.json
+.mb-quests.json
+.mb-bagwork.json

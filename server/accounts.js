@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { detectPlatform } from "./clips.js";
 import { loadDoc, saveDoc } from "./store.js";
+import { xTweetData } from "./sources/clipStats.js";
 
 // ---- Connected clip accounts (identity / "prove it's the same person") ----
 // A Market Bubble member (their Twitch/Kick sign-in = mbKey "source:username") can
@@ -25,11 +26,11 @@ const OEMBED = {
   tiktok: (url) => `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`,
   youtube: (url) => `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`,
 };
-export const VERIFIABLE = Object.keys(OEMBED); // auto-verify via oEmbed
-// X + Instagram have no usable public oEmbed → connect the handle, but ownership
-// is confirmed by the operator when they review the clip (the approval queue is
-// the real gate). YouTube also covers Shorts (same domain).
-export const MANUAL = ["x", "instagram"];
+// Auto-verify: TikTok/YouTube via oEmbed, X via the syndication endpoint (it
+// returns the tweet's author AND text, so the code-in-a-post trick works there
+// too). Instagram stays manual (no public read).
+export const VERIFIABLE = [...Object.keys(OEMBED), "x"];
+export const MANUAL = ["instagram"];
 export const CONNECTABLE = [...VERIFIABLE, ...MANUAL];
 
 // mbKey -> { "platform:handle": { platform, handle, code, verified, createdAt, verifiedAt } }
@@ -116,11 +117,14 @@ export async function verifyAccount(mbKey, platform, handle, clipUrl, fetcher = 
   const link = mine?.[k];
   if (!link) return { ok: false, error: "Request a code for this account first." };
   if (link.verified) return { ok: true, verified: true };
-  if (detectPlatform(clipUrl) !== platform) return { ok: false, error: `That link isn't a ${platform} clip.` };
-  const data = await oembed(platform, clipUrl, fetcher);
-  if (!data) return { ok: false, error: "Couldn't read that clip — check the link is public." };
-  if (data.author !== normHandle(handle)) return { ok: false, error: `That clip is by @${data.author || "?"}, not @${normHandle(handle)}.` };
-  if (!data.caption.toUpperCase().includes(link.code)) return { ok: false, error: `Add your code ${link.code} to the clip's caption, then verify.` };
+  if (detectPlatform(clipUrl) !== platform) return { ok: false, error: `That link isn't a ${platform} ${platform === "x" ? "post" : "clip"}.` };
+  const data =
+    platform === "x"
+      ? await xTweetData(clipUrl, fetcher).then((t) => (t ? { author: t.author, caption: t.text } : null))
+      : await oembed(platform, clipUrl, fetcher);
+  if (!data) return { ok: false, error: "Couldn't read that post — check the link is public." };
+  if (data.author !== normHandle(handle)) return { ok: false, error: `That post is by @${data.author || "?"}, not @${normHandle(handle)}.` };
+  if (!data.caption.toUpperCase().includes(link.code)) return { ok: false, error: `Add your code ${link.code} to the post, then verify.` };
   link.verified = true;
   link.verifiedAt = Date.now();
   dirty = true;

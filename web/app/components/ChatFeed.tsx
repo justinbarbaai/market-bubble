@@ -551,6 +551,12 @@ function Row({
                 {profile.member.clips.featured > 0 && <b> · ★ featured</b>}
               </span>
             )}
+            {profile?.member?.bagwork && (
+              <span className="cf-card-clipline">
+                {profile.member.bagwork.posts} $ANSEM post{profile.member.bagwork.posts === 1 ? "" : "s"} ·{" "}
+                {profile.member.bagwork.score.toLocaleString("en-US")} engagement
+              </span>
+            )}
 
             {/* Everything session/tenure folds into one quiet line. */}
             <span className="cf-card-session">

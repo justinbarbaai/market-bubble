@@ -136,7 +136,7 @@ export function ConnectAccounts({
           </select>
           <input className="clip-input" placeholder="your @handle" value={handle} onChange={(e) => setHandle(e.target.value)} aria-label="Your handle" />
           <button className="clip-submit-btn ghost" type="submit" disabled={busy || !handle.trim()}>
-            {platform === "x" || platform === "instagram" ? "Add" : "Get code"}
+            {platform === "instagram" ? "Add" : "Get code"}
           </button>
         </form>
       ) : (
@@ -150,7 +150,7 @@ export function ConnectAccounts({
               </div>
             )}
             <p className="clip-acc-instr">
-              Put <b>{pending.code}</b> in the caption of any <b>{PLATFORM_LABEL[pending.platform]}</b> post from <b>@{pending.handle}</b>, then paste that link below. (Scan the code to finish on your phone, where your {PLATFORM_LABEL[pending.platform]} app is.)
+              Put <b>{pending.code}</b> in {pending.platform === "x" ? "the text of a post" : "the caption of any post"} from <b>@{pending.handle}</b> on <b>{PLATFORM_LABEL[pending.platform]}</b>, then paste that link below.{pending.platform === "x" ? "" : " (Scan the code to finish on your phone, where the app is.)"}
             </p>
           </div>
           <div className="clip-submit-row">

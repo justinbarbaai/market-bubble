@@ -208,8 +208,98 @@ export default function QuestsPage() {
             </ol>
           )}
         </section>
+
+        {/* bagwork — $ANSEM posts on X */}
+        <Bagwork identity={identity} hubHttpUrl={hubHttpUrl} />
       </div>
     </TermShell>
+  );
+}
+
+// Bagwork: submit your $ANSEM posts (author must be your VERIFIED X handle —
+// verify it on your profile) → engagement tracked → Top Bagworkers → weight.
+type BagPost = { id: string; url: string; handle: string; text: string; likes: number; replies: number };
+type BagMine = { posts: BagPost[]; count: number; score: number } | null;
+type BagRow = { rank: number; name: string; source: string; handle: string; posts: number; score: number };
+
+function Bagwork({ identity, hubHttpUrl }: { identity: { source: "twitch" | "kick"; username: string } | null; hubHttpUrl: string }) {
+  const [board, setBoard] = useState<BagRow[]>([]);
+  const [mine, setMine] = useState<BagMine>(null);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = useCallback(() => {
+    const qs = identity ? `?source=${identity.source}&username=${encodeURIComponent(identity.username)}` : "";
+    fetch(`${hubHttpUrl}/bagwork${qs}`)
+      .then((r) => r.json())
+      .then((j) => { setBoard(j.leaderboard ?? []); setMine(j.mine ?? null); })
+      .catch(() => {});
+  }, [hubHttpUrl, identity]);
+  useEffect(() => { load(); }, [load]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!identity || !url.trim() || busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`${hubHttpUrl}/bagwork/submit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: identity.source, username: identity.username, url: url.trim(), ...identityProof() }),
+      });
+      const j = await r.json();
+      if (j.ok) { setMsg({ ok: true, text: "Post logged ✓ — engagement tracks automatically from here." }); setUrl(""); load(); }
+      else setMsg({ ok: false, text: j.error || "Couldn't log that post." });
+    } catch {
+      setMsg({ ok: false, text: "Network error — try again." });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <section className="clip-gallery-wrap">
+      <div className="clip-gallery-head">
+        <h2 className="clip-gallery-title">Bagwork · $ANSEM posts</h2>
+        <span className="clip-gallery-meta">post about $ANSEM on X, drop the link — engagement counts toward your airdrop weight</span>
+      </div>
+
+      {identity && (
+        <form className="clip-submit-row" onSubmit={submit}>
+          <input
+            className="clip-input" type="url" inputMode="url"
+            placeholder="Link to your $ANSEM post on X (must be from your verified handle)…"
+            value={url} onChange={(e) => setUrl(e.target.value)} aria-label="X post URL"
+          />
+          <button className="clip-submit-btn" type="submit" disabled={busy || !url.trim()}>
+            {busy ? "Reading…" : "Log post"}
+          </button>
+        </form>
+      )}
+      {msg && <p className={`clip-msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</p>}
+      {mine && (
+        <p className="q-progress">
+          your bagwork: <b>{mine.count}</b> post{mine.count === 1 ? "" : "s"} · <b>{fmt(mine.score)}</b> engagement
+        </p>
+      )}
+
+      {board.length > 0 && (
+        <ol className="clb-list" style={{ marginTop: 12 }}>
+          {board.map((r) => (
+            <li key={`${r.source}:${r.name}`} className={`clb-row${r.rank <= 3 ? " top3" : ""}`}>
+              <div className="clb-main" style={{ cursor: "default" }}>
+                <span className="clb-rank">{String(r.rank).padStart(2, "0")}</span>
+                <span className="clb-who">
+                  <span className="clb-name">{r.name}</span>
+                  <span className="clb-sub">@{r.handle} · {r.posts} post{r.posts === 1 ? "" : "s"}</span>
+                </span>
+                <span className="clb-views"><b>{fmt(r.score)}</b><span>engagement</span></span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      {board.length === 0 && <p className="clip-empty">Nobody on the board yet — first verified $ANSEM post takes Nº 1.</p>}
+    </section>
   );
 }
 

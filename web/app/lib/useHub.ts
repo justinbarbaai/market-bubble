@@ -31,6 +31,8 @@ export interface MemberCard {
   > | null;
   // Giveaway addresses (receive-only) the member chose to display publicly.
   wallets?: Partial<Record<"sol" | "eth" | "btc", string>> | null;
+  // $ANSEM posts on X (bagwork) — count + total public engagement.
+  bagwork?: { posts: number; score: number } | null;
 }
 
 export interface Profile {

@@ -61,21 +61,36 @@ async function youtubeStats(url) {
 
 // --- X: cdn.syndication.twimg.com serves public tweet metrics tokenlessly
 // (the "token" derives from the id). No view counts — X keeps those close.
-function xStatusId(url) {
+export function xStatusId(url) {
   return String(url).match(/status(?:es)?\/(\d{8,25})/)?.[1] ?? null;
 }
-async function xStats(url) {
+// Full public tweet read via the syndication endpoint: author + text + metrics.
+// Powers clip stats, X-handle verification (code-in-tweet), and Bagwork.
+export async function xTweetData(url, fetcher = fetch) {
   const id = xStatusId(url);
   if (!id) return null;
   const token = ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, "");
-  const r = await fetch(
+  const r = await fetcher(
     `https://cdn.syndication.twimg.com/tweet-result?id=${id}&token=${token}`,
     { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(15000) }
   );
   if (!r.ok) return null;
   const j = await r.json().catch(() => null);
   if (!j || !j.id_str) return null;
-  return { views: null, likes: num(j.favorite_count), comments: num(j.conversation_count) };
+  return {
+    id: j.id_str,
+    author: String(j.user?.screen_name || "").toLowerCase() || null,
+    authorName: j.user?.name || null,
+    text: String(j.text || ""),
+    likes: num(j.favorite_count) ?? 0,
+    replies: num(j.conversation_count) ?? 0,
+    createdAt: j.created_at ? Date.parse(j.created_at) : null,
+  };
+}
+async function xStats(url) {
+  const t = await xTweetData(url);
+  if (!t) return null;
+  return { views: null, likes: t.likes, comments: t.replies };
 }
 
 // --- Twitch clips: Helix (app creds; view_count only) ---
